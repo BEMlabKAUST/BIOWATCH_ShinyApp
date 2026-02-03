@@ -1,3 +1,12 @@
+if (Sys.info()[["sysname"]] == "Darwin") {
+  options(browser = "open")
+} else if (.Platform$OS.type == "windows") {
+  options(browser = "shell.exec")
+} else {
+  options(browser = Sys.which("xdg-open"))
+}
+
+
 library(shiny)
 library(shinyWidgets)
 library(shinyjs)
@@ -280,29 +289,8 @@ tags$style(HTML("
                    div(style = "color: white; font-size: 20px; font-weight: bold; margin-bottom: 5px;",
                        "Select Database"
                    ), 
-                   selectInput("db_choice", NULL, choices = c("Loading..." = "")),
-                   
-                   # Conditional Panel for Custom Database
-                   conditionalPanel(
-                     condition = "input.db_choice === 'Custom'",
-                     
-                     # Styled Text Area Input
-                     div(
-                       style = "color: white; font-size: 20px; font-weight: bold;",
-                       "Enter prefix of database:"
-                     ),
-                     textAreaInput(
-                       "custom_db", NULL, 
-                       value = "", 
-                       placeholder = "Write the database prefix here...", 
-                       rows = 1, width = "100%"
-                     ),
-                     
-                     # File Input for Custom SOI List
-                     div(style = "color: white; font-size: 20px;",
-                     fileInput("custom_db_specieslist", "Upload Custom SOI list", accept = c(".txt"))
-                     )
-                   )
+                   selectInput("db_choice", NULL, choices = c("Loading..." = ""))
+                  
                  ),
                  
                  div(
@@ -317,7 +305,7 @@ tags$style(HTML("
                    fileInput("table_file", "Upload ASV Table (Optional)", accept = c(".txt", ".csv"))
                    ),
                    div(style = "color: white; font-size: 20px; white-space: nowrap; ",
-                   fileInput("coord_file", "Upload Coordinate File (Optional)", accept = c(".txt"))
+                   fileInput("coord_file", "Upload Coordinate File (Optional)", accept = c(".txt", ".tsv"))
                    )
                  )
                ), 
@@ -1179,7 +1167,7 @@ server <- function(input, output, session) {
     db_path <- file.path("databases", input$db_choice)
     output_file <- tempfile(fileext = ".txt")
     
-    validate(
+    shiny::validate(
       need(file.exists(query_path), "Query file is missing or invalid."),
       need(file.exists(paste0(db_path, ".nin")), 
            "Database files are missing or the path is incorrect.")
@@ -1539,7 +1527,7 @@ tryCatch({
         select(qseqid, sscinames)
       
       # Validate we have data
-      validate(
+      shiny::validate(
         need(nrow(soi_results) > 0, "No Species of Interest found in filtered results")
       )
       
@@ -1579,7 +1567,7 @@ tryCatch({
       select(qseqid, sscinames)
     
     # Validate we have data
-    validate(
+    shiny::validate(
       need(nrow(soi_results) > 0, "No species of interest found in filtered results")
     )
     
@@ -1911,7 +1899,7 @@ tryCatch({
     # Combine selected species from both categories
     selected_species <- c(input$selected_likely_species, input$selected_potential_species)
     
-    validate(
+    shiny::validate(
       need(length(selected_species) > 0, "Please select at least one species")
     )
     
@@ -1920,7 +1908,7 @@ tryCatch({
       filter(SOI_flag == TRUE, sscinames %in% selected_species) %>%
       select(qseqid, sscinames, Multiple_Instances)
     
-    validate(
+    shiny::validate(
       need(nrow(soi_results) > 0, "No ASVs found for selected species")
     )
     
@@ -1965,7 +1953,7 @@ tryCatch({
       uploaded_metadata <- read.csv(input$metadata_file$datapath, stringsAsFactors = FALSE)
       
       
-      validate(
+      shiny::validate(
         need("SampleID" %in% colnames(uploaded_metadata),
              "Uploaded metadata must include a 'SampleID' column for joining.")
       )
