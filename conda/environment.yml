@@ -1,0 +1,47 @@
+name: BIOWATCH
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # Core
+  - python=3.11
+  - pip
+  - r-base
+
+  # R packages
+  - r-shiny
+  - r-shinydashboard
+  - r-ggplot2
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-data.table
+  - r-plotly
+  - r-dt
+  - r-rmarkdown
+  - r-reticulate
+
+  # Bioconductor
+  - bioconductor-dada2
+  - bioconductor-biostrings
+
+  # Bio tools
+  - blast
+  - crabs
+  - cutadapt
+  - vsearch
+  - seqkit
+
+  # Utilities
+  - git
+  - curl
+  - unzip
+
+  # Pip section MUST be last and indented exactly like this
+  - pip:
+    - pandas
+    - tqdm
+    - biopython
+
