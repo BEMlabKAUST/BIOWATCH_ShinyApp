@@ -12,36 +12,25 @@ dependencies:
 
   # R packages
   - r-shiny
-  - r-shinydashboard
-  - r-ggplot2
-  - r-dplyr
-  - r-tidyr
-  - r-readr
+  - r-shinyWidgets
+  - r-shinyjs
+  - r-bslib
+  - r-leaflet
   - r-data.table
-  - r-plotly
-  - r-dt
-  - r-rmarkdown
+  - r-tidyverse
+  - r-rgbif
+  - r-htmlwidgets
+  - r-leaflet.extras
+  - r-sf
+  - r-wk
+  - r-geojsonio
+  - r-DT
+  - r-future
+  - r-promises
   - r-reticulate
-
-  # Bioconductor
-  - bioconductor-dada2
-  - bioconductor-biostrings
 
   # Bio tools
   - blast
   - crabs
-  - cutadapt
-  - vsearch
-  - seqkit
 
-  # Utilities
-  - git
-  - curl
-  - unzip
-
-  # Pip section MUST be last and indented exactly like this
-  - pip:
-    - pandas
-    - tqdm
-    - biopython
 
