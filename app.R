@@ -24,6 +24,8 @@ library(DT)
 library(reticulate)
 library(future)
 library(promises)
+library(digest)
+
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 options(shiny.launch.browser = TRUE)
@@ -2778,49 +2780,70 @@ output$download_database_species_list <- downloadHandler(
     }
   )
   
-  observeEvent(input$generate_run, {
-    
-    req(input$species_file)
-    
-    showModal(modalDialog(
-      title = "Processing",
-      "Running Database Construction... Please wait.",
-      footer = NULL
-    ))
-    
-########################    
-####CREATE TAXA LIST####
-########################   
-    
-    species_list <- readLines(input$species_file$datapath) %>% trimws()
-    genera <- unique(sapply(species_list, function(x) strsplit(x, " ")[[1]][1]))
-    
-    #Get family taxon IDs
-    get_family_taxon_id <- function(species) {
-      result <- name_backbone(name = species)
-      if (!is.null(result$familyKey)) result$familyKey else NA
+observeEvent(input$generate_run, {
+  
+  req(input$species_file)
+  
+  showModal(modalDialog(
+    title = "Processing",
+    "Running Database Construction... Please wait.",
+    footer = NULL
+  ))
+  
+  ######################## 
+  ####CREATE TAXA LIST####
+  ######################## 
+  
+  species_list <- readLines(input$species_file$datapath) %>% trimws()
+  genera <- unique(sapply(species_list, function(x) strsplit(x, " ")[[1]][1]))
+  
+  #Get family taxon IDs
+  get_family_taxon_id <- function(species) {
+    result <- name_backbone(name = species)
+    if (!is.null(result$familyKey)) result$familyKey else NA
+  }
+  
+  family_taxon_ids <- unique(na.omit(sapply(species_list, get_family_taxon_id)))
+  # Special case adjustment
+  if (any(family_taxon_ids %in% c(7336, 7334))) {
+    family_taxon_ids <- unique(c(family_taxon_ids, 8596, 8597))
+  }
+  
+  if (length(family_taxon_ids) == 0) {
+    showNotification("No valid taxon IDs found!", type = "error")
+    removeModal()
+    return(NULL)
+  }
+  
+  #Submit GBIF download based on geographic coordinates
+  wkt_polygon <- selected_wkt()
+  if (is.null(wkt_polygon) || nchar(wkt_polygon) < 10) {
+    showNotification("No valid polygon selected. Draw a region first!", type = "error")
+    removeModal()
+    return(NULL)
+  }
+  
+  # Create cache directory if it doesn't exist
+  cache_dir <- file.path(getwd(), "gbif_cache")
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+  
+  # Create cache key from taxon IDs and WKT polygon
+  cache_key <- digest::digest(list(family_taxon_ids, wkt_polygon), algo = "md5")
+  cache_file_path <- file.path(cache_dir, paste0(cache_key, ".rds"))  # Renamed to avoid confusion
+  
+  # Check if cache exists and is less than 30 days old
+  use_cache <- FALSE
+  if (file.exists(cache_file_path)) {
+    cache_age <- difftime(Sys.time(), file.info(cache_file_path)$mtime, units = "days")
+    if (cache_age < 30) {
+      use_cache <- TRUE
+      cached_data <- readRDS(cache_file_path)
+      gbif_results(cached_data)
+      showNotification("Using cached GBIF data", type = "message", duration = 5)
     }
-    
-    family_taxon_ids <- unique(na.omit(sapply(species_list, get_family_taxon_id)))
-    # Special case adjustment
-    if (any(family_taxon_ids %in% c(7336, 7334))) {
-      family_taxon_ids <- unique(c(family_taxon_ids, 8596, 8597))
-    }
-    
-    if (length(family_taxon_ids) == 0) {
-      showNotification("No valid taxon IDs found!", type = "error")
-      removeModal()
-      return(NULL)
-    }
-    
-    #Submit GBIF download based on geographic coordinates
-    wkt_polygon <- selected_wkt()
-    if (is.null(wkt_polygon) || nchar(wkt_polygon) < 10) {
-      showNotification("No valid polygon selected. Draw a region first!", type = "error")
-      removeModal()
-      return(NULL)
-    }
-    
+  }
+  
+  if (!use_cache) {
     req_download <- occ_download(
       pred_and(pred_in("taxonKey", family_taxon_ids),
                pred("geometry", wkt_polygon)),
@@ -2831,37 +2854,45 @@ output$download_database_species_list <- downloadHandler(
     )
     gbif_request_id(req_download)
     showNotification("GBIF download started…", type = "message", duration = 5)
-    
-    #Get information from GBIF
-    observe({
-      req(gbif_request_id())
-      invalidateLater(5000)
-      
-      meta <- tryCatch(
-        occ_download_meta(gbif_request_id()),
-        error = function(e) return(NULL)
-      )
-      
-      if (!is.null(meta)) {
-        if (meta$status == "SUCCEEDED") {
-          zipfile <- occ_download_get(gbif_request_id())
-          zip_contents <- unzip(zipfile, list = TRUE)$Name
-          occ_file <- zip_contents[grepl("\\.csv$", zip_contents)][1]
-          if (!is.na(occ_file)) {
-            occ <- read.delim(unz(zipfile, occ_file), sep = "\t", stringsAsFactors = FALSE)
-            gbif_results(occ)
-          }
-          gbif_request_id(NULL)
-        }
-      }
-    })
+  }
   
-    observeEvent(gbif_results(), {
-      occ <- gbif_results()
-      if (!is.null(occ) && "species" %in% colnames(occ)) {
-        additional_species_rv(unique(occ$species[!is.na(occ$species) & nzchar(occ$species)]))
+  #Get information from GBIF
+  observe({
+    req(gbif_request_id())
+    invalidateLater(5000)
+    
+    meta <- tryCatch(
+      occ_download_meta(gbif_request_id()),
+      error = function(e) return(NULL)
+    )
+    
+    if (!is.null(meta)) {
+      if (meta$status == "SUCCEEDED") {
+        zipfile <- occ_download_get(gbif_request_id())
+        zip_contents <- unzip(zipfile, list = TRUE)$Name
+        occ_file <- zip_contents[grepl("\\.csv$", zip_contents)][1]
+        if (!is.na(occ_file)) {
+          occ <- read.delim(unz(zipfile, occ_file), sep = "\t", stringsAsFactors = FALSE)
+          gbif_results(occ)
+          # Save to cache with explicit error handling
+          tryCatch({
+            saveRDS(occ, cache_file_path)
+            showNotification(paste("Cached to:", cache_file_path), type = "message", duration = 3)
+          }, error = function(e) {
+            showNotification(paste("Cache save failed:", e$message), type = "warning", duration = 5)
+          })
+        }
+        gbif_request_id(NULL)
       }
-    })
+    }
+  })
+  
+  observeEvent(gbif_results(), {
+    occ <- gbif_results()
+    if (!is.null(occ) && "species" %in% colnames(occ)) {
+      additional_species_rv(unique(occ$species[!is.na(occ$species) & nzchar(occ$species)]))
+    }
+  })
     
     #Get synonyms
     observeEvent(species_list, {
