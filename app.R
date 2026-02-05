@@ -917,7 +917,7 @@ tags$style(HTML("
                        p("Dr. Susana Carvalho - King Abdullah University of Science and Technology"),
                        p("Dr. Eva Aylagas - King Abdullah University of Science and Technology"),
                        p("Example lists and data were based on", tags$a(href = "https://doi.org/10.1002/edn3.583", class = "custom-link", target = "_blank", "Aylagas et al 2024"), ", ", 
-                         tags$a(href = "https://doi.org/10.1038/s41598-024-60336-8", class = "custom-link", target = "_blank", "Villalobos et al 2024"), " and ", 
+                         tags$a(href = "https://doi.org/10.1038/s41598-024-60336-8", class = "custom-link", target = "_blank", "Villalobos et al 2024"), ", ", 
                          tags$a(href = "http://dx.doi.org/10.1098/rspb.2018.2697", class = "custom-link", target = "_blank", "Carvalho et al 2019"), " and ", 
                          tags$a(href = "10.3389/fmars.2023.1295997", class = "custom-link", target = "_blank", "Pearman et al 2024"))),
                    
