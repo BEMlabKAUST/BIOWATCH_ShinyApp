@@ -397,7 +397,25 @@ tags$style(HTML("
                       div(style = "color: white; font-size: 20px; white-space: nowrap; ",
                       h3("Putative Species of Interest detection"),
                       p("Best similarity match is shared by multiple species. Further investigation is required.")),
-                      uiOutput("soi_species_boxes_potential")
+                      uiOutput("soi_species_boxes_potential"),
+                      div(
+                        style = "position: fixed;
+      bottom: 10px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      color: white;
+      z-index: 1000;
+      pointer-events: none;",
+                        
+                        div(style = "font-size: 16px;", "Disclaimer:"),
+                        div(style = "font-size: 14px;",
+                            "We are not responsible for incompleteness of the reference database and undiscovered/undetected species"),
+                        div(style = "font-size: 14px;",
+                            "Please assess completion of the databases through the database creation step"),
+                        div(style = "font-size: 14px;",
+                            "This website is free and open to all users")
+                      )
              )
              ) 
     ),
