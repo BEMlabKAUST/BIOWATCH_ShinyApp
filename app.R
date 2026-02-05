@@ -28,7 +28,15 @@ library(digest)
 
 
 options(shiny.maxRequestSize = 500 * 1024^2)
-options(shiny.launch.browser = TRUE)
+
+docker_mode <- Sys.getenv("DOCKER", "FALSE") == "TRUE"
+
+if (docker_mode) {
+  options(shiny.launch.browser = FALSE)
+} else {
+  options(shiny.launch.browser = TRUE)
+}
+
  
  ui <- fluidPage(
    tags$style(HTML("
@@ -2674,7 +2682,7 @@ historic_filtered_data <- reactive({
     species_list <- trimws(species_list)
     
     
-    cleaned_data <- read.delim("merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
+    cleaned_data <- read.delim("intermediate/merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
     species_column <- cleaned_data[, 10]   # species column
     
     df <- species_dataframe_rv()
@@ -2770,7 +2778,7 @@ output$download_database_species_list <- downloadHandler(
     content = function(file) {
       
       
-      cleaned_data <- read.delim("merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
+      cleaned_data <- read.delim("intermediate/merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
       species <- cleaned_data[, 10]
       species <- trimws(species)
       species <- species[!is.na(species) & nzchar(species)]
@@ -2948,14 +2956,14 @@ observeEvent(input$generate_run, {
                                 "--download-ncbi",
                                 "--database nucleotide",
                                 "--query", shQuote(final_chunk_query),
-                                "--output", paste0("ncbi_", i, ".fasta"),
+                                "--output", paste0("intermediate/ncbi_", i, ".fasta"),
                                 "--email", ncbi_email,
                                 "--batchsize 5000")
           system(ncbi_command, wait = TRUE)
         }
-        system("cat ncbi_*.fasta > merged_ncbi_output.fasta")
-        system("awk '{if (/>.*/) {print} else { sub(/^N*/, \"\"); sub(/N*$/, \"\"); print}}' merged_ncbi_output.fasta > merged_ncbi_output_cleaned.fasta")
-        system(paste(crabs_path, "--import --import-format ncbi --input merged_ncbi_output_cleaned.fasta --output merged_ncbi_output.tax.tsv --acc2tax data/nucl_gb.accession2taxid --nodes data/nodes.dmp --names data/names.dmp --ranks 'superkingdom;phylum;class;order;family;genus;species'"))
+        system("cat intermediate/ncbi_*.fasta > intermediate/merged_ncbi_output.fasta")
+        system("awk '{if (/>.*/) {print} else { sub(/^N*/, \"\"); sub(/N*$/, \"\"); print}}' intermediate/merged_ncbi_output.fasta > intermediate/merged_ncbi_output_cleaned.fasta")
+        system(paste(crabs_path, "--import --import-format ncbi --input intermediate/merged_ncbi_output_cleaned.fasta --output intermediate/merged_ncbi_output.tax.tsv --acc2tax data/nucl_gb.accession2taxid --nodes data/nodes.dmp --names data/names.dmp --ranks 'superkingdom;phylum;class;order;family;genus;species'"))
       }
   
 #####################
@@ -2977,7 +2985,7 @@ observeEvent(input$generate_run, {
             crabs_path,
             "--download-bold", #uses BOLD v5
             "--taxon", shQuote(taxon),
-            "--output", shQuote(paste0("bold_", taxon, ".tsv")),
+            "--output", shQuote(paste0("intermediate/bold_", taxon, ".tsv")),
             "--marker", shQuote(input$bold_marker)
           )
           
@@ -2995,7 +3003,7 @@ observeEvent(input$generate_run, {
         }
         
         # Merge and clean the downloaded BOLD sequences
-        all_bold_files <- list.files(pattern = "^bold_.*\\.tsv$", full.names = TRUE)
+        all_bold_files <- list.files(pattern = "intermediate/^bold_.*\\.tsv$", full.names = TRUE)
         if (length(all_bold_files) > 0) {
           # Read all files and combine, filling missing columns with NA
           combined_data <- lapply(all_bold_files, function(file) {
@@ -3011,14 +3019,14 @@ observeEvent(input$generate_run, {
               combined_data$species %in% taxa_vector,
           ]
           
-          write.table(combined_data, "bold_combined.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
+          write.table(combined_data, "intermediate/bold_combined.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
         } 
         
         # Run CRABS import
         system(paste(crabs_path,
                      "--import --import-format BOLDV5",
-                     "--input bold_combined.tsv",
-                     "--output merged_bold_output.tax.tsv",
+                     "--input intermediate/bold_combined.tsv",
+                     "--output intermediate/merged_bold_output.tax.tsv",
                      "--acc2tax data/nucl_gb.accession2taxid",
                      "--nodes data/nodes.dmp",
                      "--names data/names.dmp",
@@ -3036,30 +3044,30 @@ observeEvent(input$generate_run, {
         system(paste(
           crabs_path,
           "--download-silva",
-          "--output silva_138.2_subset.fasta",
+          "--output intermediate/silva_138.2_subset.fasta",
           "--gene", shQuote(input$silva_marker),
           "--db-type subset",
           "--db-version 138.2"
         ))
         
         # Check if download succeeded
-        if (file.exists("silva_138.2_subset.fasta")) {
+        if (file.exists("intermediate/silva_138.2_subset.fasta")) {
           
           print("Importing SILVA data...")
           
           # Run CRABS import
           system(paste(crabs_path,
                        "--import --import-format silva",
-                       "--input silva_138.2_subset.fasta",
-                       "--output silva_output.tax.tsv",
+                       "--input intermediate/silva_138.2_subset.fasta",
+                       "--output intermediate/silva_output.tax.tsv",
                        "--acc2tax data/nucl_gb.accession2taxid",
                        "--nodes data/nodes.dmp",
                        "--names data/names.dmp",
                        "--ranks 'superkingdom;phylum;class;order;family;genus;species'"))
           
           # Filter the imported SILVA file for species in the list
-          if (file.exists("silva_output.tax.tsv")) {
-            silva_data <- read.table("silva_output.tax.tsv", header = TRUE, sep = "\t", 
+          if (file.exists("intermediate/silva_output.tax.tsv")) {
+            silva_data <- read.table("intermediate/silva_output.tax.tsv", header = TRUE, sep = "\t", 
                                      quote = "", comment.char = "",
                                      fill = TRUE, stringsAsFactors = FALSE, 
                                      colClasses = "character")
@@ -3069,7 +3077,7 @@ observeEvent(input$generate_run, {
                 silva_data[, 10] %in% taxa_vector,
             ]
             
-            write.table(silva_data, "merged_silva_output.tax.tsv", sep = "\t", 
+            write.table(silva_data, "intermediate/merged_silva_output.tax.tsv", sep = "\t", 
                         quote = FALSE, row.names = FALSE, col.names = FALSE)
             
             print(paste("Filtered SILVA data:", nrow(silva_data), "sequences"))
@@ -3089,7 +3097,7 @@ observeEvent(input$generate_run, {
         system(paste(crabs_path,
                      "--import --import-format BOLDV3",
                      "--input", shQuote(custom_fasta_path),
-                     "--output custom_fasta_output.tax.tsv",
+                     "--output intermediate/custom_fasta_output.tax.tsv",
                      "--acc2tax data/nucl_gb.accession2taxid",
                      "--nodes data/nodes.dmp",
                      "--names data/names.dmp",
@@ -3100,29 +3108,29 @@ observeEvent(input$generate_run, {
 ####MERGE FILES####
 ###################  
       
-      combined_output <- "merged_combined_output.tax.tsv"
+      combined_output <- "intermediate/merged_combined_output.tax.tsv"
       
       # Build list of files to merge based on selected sources
       files_to_merge <- character()
       
-      if ("ncbi" %in% selected_sources && file.exists("merged_ncbi_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "merged_ncbi_output.tax.tsv")
+      if ("ncbi" %in% selected_sources && file.exists("intermediate/merged_ncbi_output.tax.tsv")) {
+        files_to_merge <- c(files_to_merge, "intermediate/merged_ncbi_output.tax.tsv")
       }
       
-      if ("bold" %in% selected_sources && file.exists("merged_bold_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "merged_bold_output.tax.tsv")
+      if ("bold" %in% selected_sources && file.exists("intermediate/merged_bold_output.tax.tsv")) {
+        files_to_merge <- c(files_to_merge, "intermediate/merged_bold_output.tax.tsv")
       }
       
-      if ("midori" %in% selected_sources && file.exists("merged_midori_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "merged_midori_output.tax.tsv")
+      if ("midori" %in% selected_sources && file.exists("intermediate/merged_midori_output.tax.tsv")) {
+        files_to_merge <- c(files_to_merge, "intermediate/merged_midori_output.tax.tsv")
       }
       
-      if ("silva" %in% selected_sources && file.exists("merged_silva_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "merged_silva_output.tax.tsv")
+      if ("silva" %in% selected_sources && file.exists("intermediate/merged_silva_output.tax.tsv")) {
+        files_to_merge <- c(files_to_merge, "intermediate/merged_silva_output.tax.tsv")
       }
       
-      if (!is.null(input$custom_fasta) && file.exists("custom_fasta_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "custom_fasta_output.tax.tsv")
+      if (!is.null(input$custom_fasta) && file.exists("intermediate/custom_fasta_output.tax.tsv")) {
+        files_to_merge <- c(files_to_merge, "intermediate/custom_fasta_output.tax.tsv")
       }
       
       if (length(files_to_merge) > 1) {
@@ -3142,24 +3150,24 @@ observeEvent(input$generate_run, {
 ###########################
       
       #Dereplicate sequences and clean output
-      system(paste(crabs_path, "--dereplicate --input", combined_output, "--output merged_combined_output.filtered.tsv --dereplication-method \'unique_species\'"))
+      system(paste(crabs_path, "--dereplicate --input", combined_output, "--output intermediate/merged_combined_output.filtered.tsv --dereplication-method \'unique_species\'"))
       
-      system("awk -F'\t' 'NF>=1 && length($NF)>0' merged_combined_output.filtered.tsv > merged_combined_output.filtered.cleaned.tsv")
-      system("awk -F'\t' 'NF>=1 && length($NF)>0 {gsub(/ /,\"-\",$1); print}' OFS='\t' merged_combined_output.filtered.cleaned.tsv > merged_combined_output.filtered.cleaned.final.tsv")
+      system("awk -F'\t' 'NF>=1 && length($NF)>0' intermediate/merged_combined_output.filtered.tsv > intermediate/merged_combined_output.filtered.cleaned.tsv")
+      system("awk -F'\t' 'NF>=1 && length($NF)>0 {gsub(/ /,\"-\",$1); print}' OFS='\t' intermediate/merged_combined_output.filtered.cleaned.tsv > intermediate/merged_combined_output.filtered.cleaned.final.tsv")
       
       # Insilico PCR using selected primers
-      system(paste(crabs_path, "--in-silico-pcr --input merged_combined_output.filtered.cleaned.final.tsv --output insilico_relaxed.txt --forward", shQuote(input$forward_primer), "--reverse", shQuote(input$reverse_primer), "--relaxed"))
+      system(paste(crabs_path, "--in-silico-pcr --input intermediate/merged_combined_output.filtered.cleaned.final.tsv --output intermediate/insilico_relaxed.txt --forward", shQuote(input$forward_primer), "--reverse", shQuote(input$reverse_primer), "--relaxed"))
       
       #Pairwise global alignment to find any sequences with no primers but correct region
-      system(paste(crabs_path, "--pairwise-global-alignment --input merged_combined_output.filtered.cleaned.final.tsv --amplicons insilico_relaxed.txt --output insilico_aligned.txt --forward", shQuote(input$forward_primer), "--reverse", shQuote(input$reverse_primer), "--size-select 10000 --percent-identity 0.95 --coverage 95"))
+      system(paste(crabs_path, "--pairwise-global-alignment --input intermediate/merged_combined_output.filtered.cleaned.final.tsv --amplicons intermediate/insilico_relaxed.txt --output intermediate/insilico_aligned.txt --forward", shQuote(input$forward_primer), "--reverse", shQuote(input$reverse_primer), "--size-select 10000 --percent-identity 0.95 --coverage 95"))
       
       #Further dereplication after insilico PCR
-      system(paste(crabs_path, "--dereplicate --input insilico_aligned.txt --output merged_combined_output.tax.cleaned.tsv --dereplication-method \'unique_species\'"))
+      system(paste(crabs_path, "--dereplicate --input intermediate/insilico_aligned.txt --output intermediate/merged_combined_output.tax.cleaned.tsv --dereplication-method \'unique_species\'"))
       
       #Filtering of results - possibly requires minimum length to be changed. 
       system(paste(crabs_path, "--filter", 
-                   "--input merged_combined_output.tax.cleaned.tsv", 
-                   "--output merged_combined_output.tax.cleaned.final.tsv", 
+                   "--input intermediate/merged_combined_output.tax.cleaned.tsv", 
+                   "--output intermediate/merged_combined_output.tax.cleaned.final.tsv", 
                    "--minimum-length 150",
                    "--maximum-n 5",
                    "--environmental",
@@ -3167,7 +3175,7 @@ observeEvent(input$generate_run, {
                    "--rank-na 2"))
       
       #Sort out issues with Sequence ID names to enable BLAST database to be constructed. 
-      dt <- fread("merged_combined_output.tax.cleaned.final.tsv", sep = "\t")
+      dt <- fread("intermediate/merged_combined_output.tax.cleaned.final.tsv", sep = "\t")
       
       dt[[1]] <- gsub(":", "-", dt[[1]])
       
@@ -3183,18 +3191,18 @@ observeEvent(input$generate_run, {
                         paste0(dt[[1]], "_", dup_index))
       
       fwrite(dt,
-             "merged_combined_output.tax.cleaned.final.tsv",
+             "intermediate/merged_combined_output.tax.cleaned.final.tsv",
              sep = "\t",
              quote = FALSE,
              col.names = FALSE)
       
       #Export into fasta format
-      system(paste(crabs_path, "--export --input merged_combined_output.tax.cleaned.final.tsv --output combined.db.fasta --export-format rdp"))
-      system(paste("awk '/^>/ {print $1; next}1'", shQuote("combined.db.fasta"), ">", shQuote(file.path("databases", paste0(db_name(), ".fasta")))))
+      system(paste(crabs_path, "--export --input intermediate/merged_combined_output.tax.cleaned.final.tsv --output intermediate/combined.db.fasta --export-format rdp"))
+      system(paste("awk '/^>/ {print $1; next}1'", shQuote("intermediate/combined.db.fasta"), ">", shQuote(file.path("databases", paste0(db_name(), ".fasta")))))
       
       #Create taxonomy file
-      system("awk -F\"\\t\" '{ print $1,$3 }' merged_combined_output.tax.cleaned.final.tsv > taxonomy.dictionary.combined.v1.txt")
-      system(paste("grep -v 'seqID'", shQuote("taxonomy.dictionary.combined.v1.txt"), ">", shQuote(file.path("databases", paste0(db_name(), ".txt")))))
+      system("awk -F\"\\t\" '{ print $1,$3 }' intermediate/merged_combined_output.tax.cleaned.final.tsv > intermediate/taxonomy.dictionary.combined.v1.txt")
+      system(paste("grep -v 'seqID'", shQuote("intermediate/taxonomy.dictionary.combined.v1.txt"), ">", shQuote(file.path("databases", paste0(db_name(), ".txt")))))
       
       #Make BLAST database
       system(paste(
@@ -3224,33 +3232,33 @@ observeEvent(input$generate_run, {
       
       onSessionEnded(function() {
         if (.Platform$OS.type == "windows") {
-          system("del /Q insilico_*.txt", intern = TRUE)
-          system("del /Q *.zip", intern = TRUE)
-          system("del /Q ncbi_*.fasta", intern = TRUE)
-          system("del /Q bold_*.tsv", intern = TRUE)
-          system("del /Q merged_combined_output.*", intern = TRUE)
-          system("del /Q silva_*", intern = TRUE)
-          system("del /Q merged_silva_output.tax.tsv", intern = TRUE)
-          system("del /Q *_cleaned.fasta", intern = TRUE)
-          system("del /Q merged_ncbi_output*", intern = TRUE)
-          system("del /Q merged_bold_output*", intern = TRUE)
-          system("del /Q combined.db*", intern = TRUE)
-          system("del /Q taxonomy.dictionary.*", intern = TRUE)
-          system("del /Q custom_fasta_output.*", intern = TRUE)
+          system("del /Q intermediate/insilico_*.txt", intern = TRUE)
+          system("del /Q intermediate/*.zip", intern = TRUE)
+          system("del /Q intermediate/ncbi_*.fasta", intern = TRUE)
+          system("del /Q intermediate/bold_*.tsv", intern = TRUE)
+          system("del /Q intermediate/merged_combined_output.*", intern = TRUE)
+          system("del /Q intermediate/silva_*", intern = TRUE)
+          system("del /Q intermediate/merged_silva_output.tax.tsv", intern = TRUE)
+          system("del /Q intermediate/*_cleaned.fasta", intern = TRUE)
+          system("del /Q intermediate/merged_ncbi_output*", intern = TRUE)
+          system("del /Q intermediate/merged_bold_output*", intern = TRUE)
+          system("del /Q intermediate/combined.db*", intern = TRUE)
+          system("del /Q intermediate/taxonomy.dictionary.*", intern = TRUE)
+          system("del /Q intermediate/custom_fasta_output.*", intern = TRUE)
         } else {
-          system("rm insilico_*.txt")
-          system("rm *.zip")
-          system("rm ncbi_*.fasta")
-          system("rm bold_*.tsv")
-          system("rm merged_combined_output.*")
-          system("rm silva_*")
-          system("rm merged_silva_output.tax.tsv")
-          system("rm *_cleaned.fasta")  
-          system("rm merged_ncbi_output*")
-          system("rm merged_bold_output*")
-          system("rm combined.db*")
-          system("rm taxonomy.dictionary.*")
-          system("rm custom_fasta_output.*")
+          system("rm intermediate/insilico_*.txt")
+          system("rm intermediate/*.zip")
+          system("rm intermediate/ncbi_*.fasta")
+          system("rm intermediate/bold_*.tsv")
+          system("rm intermediate/merged_combined_output.*")
+          system("rm intermediate/silva_*")
+          system("rm intermediate/merged_silva_output.tax.tsv")
+          system("rm intermediate/*_cleaned.fasta")  
+          system("rm intermediate/merged_ncbi_output*")
+          system("rm intermediate/merged_bold_output*")
+          system("rm intermediate/combined.db*")
+          system("rm intermediate/taxonomy.dictionary.*")
+          system("rm intermediate/custom_fasta_output.*")
         }
       })      
       

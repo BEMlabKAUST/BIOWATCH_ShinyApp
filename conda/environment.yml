@@ -2,7 +2,6 @@ name: BIOWATCH
 channels:
   - conda-forge
   - bioconda
-  - defaults
 
 dependencies:
   # Core
@@ -28,6 +27,7 @@ dependencies:
   - r-future
   - r-promises
   - r-reticulate
+  - r-digest
 
   # Bio tools
   - blast
