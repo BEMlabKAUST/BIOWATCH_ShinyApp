@@ -242,11 +242,11 @@ tags$style(HTML("
                column(12, align = "center",
                       div(style = "position: relative; width: 800px; height: 600px; margin: auto;",
                           
-                          img(src = "BEM_logo2.png", height = "225px", width = "175px", 
-                              style = "position: absolute; top: 25%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                          img(src = "KAUST_logo_transparent.png", height = "150px", 
+                              style = "position: absolute; top: 40%; left: 52%; transform: translate(-50%, -50%); border-radius: 10px;"),
                             
-                          img(src = "KAUST_logo1_transparent.png", height = "135px", 
-                              style = "position: absolute; top: 55%; left: -20%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                          img(src = "BEM_logo2.png", height = "140px", 
+                              style = "position: absolute; top: 100%; left: -15%; transform: translate(-50%, -50%); border-radius: 10px;"),
                           
                           # Central Box
                           actionButton("central", "BIOWATCH", 
@@ -299,18 +299,23 @@ tags$style(HTML("
                    div(style = "color: white; font-size: 20px; font-weight: bold; margin-bottom: 5px;",
                        "Select Database"
                    ), 
-                   selectInput("db_choice", NULL, choices = c("Loading..." = ""))
+                   selectInput("db_choice", NULL, choices = c("Loading..." = "")),
+                   
+                   div(
+                     style = "flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 70px;",
+                     img(src = "BEM_logo2.png", height = "140px", style = "border-radius: 10px;")
+                   )
                   
                  ),
                  
                  div(
                    style = "flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 0px;",
-                   img(src = "BEM_logo2.png", height = "300px", width = "225px", style = "border-radius: 10px;")
+                   img(src = "KAUST_logo_transparent.png", height = "180px", style = "border-radius: 10px;")
                  ),
                  
                  # Right Section
                  div(
-                   style = "flex: 1; margin-top: 50px; margin-left: 100px;",  # Allows equal width distribution
+                   style = "flex: 1; margin-top: 50px; margin-left: 95px;",  # Allows equal width distribution
                    div(style = "color: white; font-size: 20px; margin-bottom: 75px;",
                    fileInput("table_file", "Upload ASV Table (Optional)", accept = c(".txt", ".csv"))
                    ),
@@ -318,12 +323,13 @@ tags$style(HTML("
                    fileInput("coord_file", "Upload Coordinate File (Optional)", accept = c(".txt", ".tsv"))
                    )
                  )
+                 
                ), 
                # Action Button Below
                div(
                  style = "position: relative; height: 150px;",  # Parent div for positioning
                  actionButton("run_blast", "Run BLAST", 
-                              style = "position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%);
+                              style = "position: absolute; top: 10%; left: 50%; transform: translate(-50%, -50%);
                               width: 250px; height: 75px; font-size: 36px; background-color: #2F4E7D; color: white; 
                               border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);")
                ),
@@ -381,8 +387,10 @@ tags$style(HTML("
     });
   ")),
                       
-                        img(src = "BEM_logo2.png", height = "225px", width = "175px", 
-                            style = "position: absolute; top: 150%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                        img(src = "KAUST_logo_transparent.png", height = "135px", 
+                            style = "position: absolute; top: 130%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                        img(src = "BEM_logo2.png", height = "120px", 
+                            style = "position: absolute; top: 180%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
                       )
                ),
                column(9,
@@ -485,8 +493,10 @@ tags$style(HTML("
                   p("Purple points indicate locations where species of interest are present, and grey circles represent locations where they were not present."),
                   p("Click on points for further information on sample and site name and read counts.")
                   ),
-                  img(src = "BEM_logo2.png", height = "225px", width = "175px", 
+                  img(src = "KAUST_logo_transparent.png", height = "135px", 
                       style = "position: absolute; top: 120%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                  img(src = "BEM_logo2.png", height = "120px", 
+                      style = "position: absolute; top: 155%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
                 ),
              
                 mainPanel(
@@ -604,9 +614,15 @@ tags$style(HTML("
                  uiOutput("historic_method_select"),
                  uiOutput("historic_year_slider"),
                  
+                 
                  div(
                    style = "flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 60px;",
-                   img(src = "BEM_logo2.png", height = "300px", width = "225px", style = "border-radius: 10px;")
+                   img(src = "KAUST_logo_transparent.png", height = "150px", style = "border-radius: 10px;")
+                 ),
+                 
+                 div(
+                   style = "flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 40px;",
+                   img(src = "BEM_logo2.png", height = "125px", style = "border-radius: 10px;")
                  )
                ),
                mainPanel(
@@ -795,10 +811,16 @@ tags$style(HTML("
                                              "Acknowledgements" = "learnacknowledge"), 
                                  selected = "")),
                  div(
-                   img(src = "BEM_logo2.png", height = "300px", width = "225px", 
-                       style = "position: absolute; top: 200%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;")
-                 )
+                   img(src = "KAUST_logo_transparent.png", height = "150px", 
+                       style = "position: absolute; top: 250%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;")
+                 ),
+                 
+                 div(
+                   img(src = "BEM_logo2.png", height = "120px",
+                       style = "position: absolute; top: 400%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"))
+                 
                ),
+
                
                mainPanel(
                  conditionalPanel(
@@ -912,7 +934,7 @@ tags$style(HTML("
                        p("THe development of the app was funded by:")),
                    
                    div(
-                     img(src = "KAUST_logo1_transparent.png", height = "100px", width = "225px", 
+                     img(src = "KAUST_logo_transparent.png", height = "100px", width = "225px", 
                          style = "position: absolute; top: 130%; left: 15%; transform: translate(-50%, -50%); border-radius: 10px;")
                    ),
                    
