@@ -820,7 +820,11 @@ tags$style(HTML("
                    
                    
                    div(style = "color: white; font-size: 16px; margin-bottom: 40px;", 
-                       p("The construction of the custom databases is based on the parsing of sequences contained in the National Center for Biotechnology Information (", tags$a(href = "https://www.ncbi.nlm.nih.gov", class = "custom-link", target = "_blank", "NCBI"),"; ", tags$a(href = "https://doi.org/10.1093/nar/gkac1012", class = "custom-link", target = "_blank", "Sayers et al 2023"), ") and Barcode of Life Database (BOLD;", tags$a(href = "https://doi.org/10.1111/1755-0998.13741", class = "custom-link", target = "_blank", "Ratnasingham et. al., 2024"), ") public databases")),
+                       p("The construction of the custom databases is based on the parsing of sequences contained in the National Center for Biotechnology Information (", 
+                         tags$a(href = "https://www.ncbi.nlm.nih.gov", class = "custom-link", target = "_blank", "NCBI"),"; ", 
+                         tags$a(href = "https://doi.org/10.1093/nar/gkac1012", class = "custom-link", target = "_blank", "Sayers et al 2023"), ") and Barcode of Life Database (BOLD;", 
+                         tags$a(href = "https://doi.org/10.1111/1755-0998.13741", class = "custom-link", target = "_blank", "Ratnasingham et. al., 2024"), ") and SILVA (", 
+                         tags$a(href = "https://doi.org/10.1093/nar/gkaf1247", class = "custom-link", target = "_blank", "Chuvochina et. al., 2026"), ") public databases")),
                    div(style = "color: white; font-size: 16px; margin-bottom: 40px;", 
                        p("Sequences belonging to the customised list were queried, downloaded, trimmed to the primers and filtered using the software package CRABS; Creating Reference databases for Amplicon-based Sequencing (", tags$a(href = "https://doi.org/10.1111/1755-0998.13741", class = "custom-link", target = "_blank", "Jeunen et al 2023"), ")")),
                    div(style = "color: white; font-size: 16px; margin-bottom: 40px;",    
