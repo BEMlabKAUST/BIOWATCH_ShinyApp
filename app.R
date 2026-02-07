@@ -471,7 +471,8 @@ tags$style(HTML("
                  6,
                  div(
                    class = "vis-panel",
-                   h3("Species of Interest ASV abundance map"),
+                   h3("# of ASVs for Species of Interest ASV at each site."),
+                   p("Bubbles are scaled by number of ASVs. Click on site to see numbers"),
                    div(
                      class = "vis-scroll",
                      leafletOutput("soi_map", height = "500px")
