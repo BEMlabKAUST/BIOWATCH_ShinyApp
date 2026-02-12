@@ -3048,7 +3048,7 @@ observeEvent(input$generate_run, {
         }
         
         # Merge and clean the downloaded BOLD sequences
-        all_bold_files <- list.files(pattern = "intermediate/^bold_.*\\.tsv$", full.names = TRUE)
+        all_bold_files <- list.files(path = "intermediate", pattern = "^bold_.*\\.tsv$", full.names = TRUE)
         if (length(all_bold_files) > 0) {
           # Read all files and combine, filling missing columns with NA
           combined_data <- lapply(all_bold_files, function(file) {
@@ -3061,8 +3061,8 @@ observeEvent(input$generate_run, {
         #filter for species/genera in taxa_vector after having to download using the genera  
           combined_data <- combined_data[
             combined_data$genus %in% taxa_vector | 
-              combined_data$species %in% taxa_vector,
-          ]
+              combined_data$species %in% taxa_vector
+            ,]
           
           write.table(combined_data, "intermediate/bold_combined.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
         } 
