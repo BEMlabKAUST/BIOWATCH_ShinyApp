@@ -1,11 +1,13 @@
 load_dbcomparison_data <- function(comparison_data_folder, prefix) {
   
+  #Find files in data folder to use for database comparison (automatically downloaded during database creation)
   files <- list.files(
     comparison_data_folder,
     pattern = paste0("^", prefix, "_.*_species_presence\\.csv$"),
     full.names = TRUE
   )
   
+  #Read files and rename columns to database name
   dfs <- lapply(files, function(f) {
     
     db_name <- basename(f) |>
@@ -16,6 +18,7 @@ load_dbcomparison_data <- function(comparison_data_folder, prefix) {
       dplyr::rename(!!db_name := Presence)
   })
   
+  #Combined files together for plotting
   combined <- Reduce(function(x, y) dplyr::full_join(x, y, by = "Species"), dfs)
   combined[is.na(combined)] <- "No"
   
@@ -24,10 +27,11 @@ load_dbcomparison_data <- function(comparison_data_folder, prefix) {
 
 
 plot_dbcomparison_heatmap <- function(df) {
-  
+  #Pivot dataframe longer for plotting
   df_long <- df %>%
     pivot_longer(-Species, names_to = "Database", values_to = "Presence")
   
+  #ggplot presence/absence heatmap
   ggplot(df_long, aes(x = Database, y = Species, fill = Presence)) +
     geom_tile(color = "white") +
     scale_fill_manual(values = c("No" = "#d2d2d2", "Yes" = "#716fa8"), name = "Presence") +
@@ -50,16 +54,17 @@ plot_dbcomparison_heatmap <- function(df) {
     )
 }
 
-
+#change height of plot dependent on number of species
 dbcomparison_plot_height <- function(df) {
   max(300, nrow(df) * 30)
 }
 
+#change width of plot dependent on number of samples
 dbcomparison_plot_width <- function(df) {
   max(500, (ncol(df) - 1) * 120)
 }
 
-
+#get prefixes for use in naming and selection
 get_dbcomparison_prefixes <- function(comparison_data_folder) {
   
   files <- list.files(
