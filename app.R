@@ -31,6 +31,7 @@ source("functions/import_custom_fasta.R")
 source("functions/download_bold.R")
 source("functions/download_ncbi.R")
 source("functions/create_database.R")
+source("functions/database_comparison.R")
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -799,7 +800,29 @@ tags$style(HTML("
                                )
                              )
                            )
-                         )
+                         ),
+                         
+              tabPanel("Database Comparison", value = "comparison",
+                                  sidebarLayout(
+                                    sidebarPanel(
+                                      selectInput(
+                                        inputId = "dbcomparison_prefix",
+                                        label = "Select database:",
+                                        choices = NULL   # will populate dynamically
+                                      ),
+                                      
+                                      uiOutput("download_dbcomparison_table_ui")
+                                    ),
+                                    mainPanel(
+                                      div(style = "height:30px;"),
+                                      tags$ul(
+                                        tags$li(style = "color: #716fa8; font-size:18px", "Present in database"),
+                                        tags$li(style = "color: #d2d2d2; font-size:18px", "Absent in database")),
+                                      div(style = "height:10px;"),
+                                      plotOutput("dbcomparison_heatmap")
+                                    )
+                                  )
+                         )       
                          
              )),
     
@@ -2747,6 +2770,11 @@ historic_filtered_data <- reactive({
       )
     
     colnames(presence_df) <- c("Species", "Presence")
+    
+    write.csv(presence_df,
+              file.path("data", paste0(db_name(), "_species_presence.csv")),
+              row.names = FALSE)
+    
     percentage_present <- (sum(presence_df$Presence == "Yes") / nrow(presence_df)) * 100
     
     list(presence_df = presence_df, percentage_present = percentage_present)
@@ -3062,7 +3090,7 @@ observeEvent(input$generate_run, {
 #####################      
 ###CREATE DATABASE###
 #####################
-      
+       #create the blast database from the downloaded sequences.
 success <- create_database(
         crabs_path      = crabs_path,
         selected_sources = selected_sources,
@@ -3082,7 +3110,7 @@ success <- create_database(
 ####DELETE INTERMEDIATE FILES####
 #################################
       
-      
+      #Delete the intermediate files when the page is closed
       if (.Platform$OS.type == "windows") {
         
       } else {
@@ -3134,6 +3162,55 @@ success <- create_database(
       updateTabsetPanel(session, "main_tabs", selected = "Results")
     })
   })
+
+#########################
+###Database Comparison###
+#########################
+
+comparison_data_folder <- "data"
+
+# Populate database choices
+observe({
+  prefixes <- get_dbcomparison_prefixes(comparison_data_folder)
+  updateSelectInput(session, "dbcomparison_prefix",
+                    choices  = c("Select database group" = "", prefixes),
+                    selected = "")
+})
+
+# Load comparison data
+dbcomparison_data <- reactive({
+  req(input$dbcomparison_prefix != "")
+  load_dbcomparison_data(comparison_data_folder, input$dbcomparison_prefix)
+})
+
+# Download button UI
+output$download_dbcomparison_table_ui <- renderUI({
+  req(input$dbcomparison_prefix != "")
+  downloadButton("download_dbcomparison_table", "Download Table",
+                 style = "width:200px; font-size:16px; margin-top:10px;")
+})
+
+# Download handler
+output$download_dbcomparison_table <- downloadHandler(
+  filename = function() {
+    paste0(input$dbcomparison_prefix, "_table_", Sys.Date(), ".csv")
+  },
+  content = function(file) {
+    df <- dbcomparison_data()
+    req(nrow(df) > 0)
+    write.csv(df, file, row.names = FALSE)
+  }
+)
+
+# Heatmap
+output$dbcomparison_heatmap <- renderPlot({
+  df <- dbcomparison_data()
+  req(nrow(df) > 0)
+  plot_dbcomparison_heatmap(df)
+}, bg = "transparent",
+height = function() dbcomparison_plot_height(dbcomparison_data()),
+width  = function() dbcomparison_plot_width(dbcomparison_data()))
+
   
 }
 shinyApp(ui, server)
