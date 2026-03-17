@@ -35,6 +35,7 @@ source("functions/create_database.R")
 source("functions/database_comparison.R")
 source("functions/database_results.R")
 source("functions/wkt_polygon.R")
+source("functions/longtermdata.R")
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -2241,270 +2242,125 @@ tryCatch({
 ####Long Term DATA####  
 #####################  
   
-  # Dynamic UI for historic data filters
   output$historic_species_select <- renderUI({
-    data <- historic_data()
-    
-    if (nrow(data) == 0) {
-      return(selectInput("species", "Select Species:", choices = c("No data available" = "")))
-    }
-    
-    selectInput(
-      inputId = "species",
-      label = "Select Species:",
-      choices = c("Select species" = "", unique(data$Species)),
-      selected = ""
-    )
+    build_historic_ui_selects(historic_data())$species
   })
   
   output$historic_gene_select <- renderUI({
-    data <- historic_data()
-    
-    if (nrow(data) == 0) {
-      return(selectInput("gene", "Select Gene:", choices = c("No data available" = "")))
-    }
-    
-    selectInput(
-      inputId = "gene",
-      label = "Select Gene:",
-      choices = c("Select Gene" = "", unique(data$Gene)),
-      selected = ""
-    )
+    build_historic_ui_selects(historic_data())$gene
   })
   
-  
   output$historic_method_select <- renderUI({
-    data <- historic_data()
-    
-    if (nrow(data) == 0 || !"Methodology" %in% colnames(data)) {  # Changed Method to Methodology
-      return(selectInput("samplemethod", "Select Sampling Method:", choices = c("No data available" = "")))
-    }
-    
-    selectInput(
-      inputId = "samplemethod",
-      label = "Select Sampling Method:",
-      choices = c("Select Method" = "", "All", unique(data$Methodology)),  # Changed Method to Methodology
-      selected = ""
-    )
+    build_historic_ui_selects(historic_data())$samplemethod
   })
   
   output$historic_year_slider <- renderUI({
-    data <- historic_data()
-    
-    if (nrow(data) == 0 || !"Year" %in% colnames(data)) {
-      return(p("No year data available", style = "color: white;"))
-    }
-    
-    min_year <- min(data$Year, na.rm = TRUE)
-    max_year <- max(data$Year, na.rm = TRUE)
-    
-    sliderInput(
-      "year_range",
-      "Select Year Range:",
-      min = min_year,
-      max = max_year,
-      value = c(min_year, max_year),
-      step = 1,  # Changed from calculation to 1
-      sep = ""
+    build_historic_year_slider(historic_data())
+  })
+  
+  #filter data based on selection options
+  historic_filtered_data <- reactive({
+    req(input$species, input$gene, input$year_range, input$samplemethod)
+    filter_historic_data(
+      data         = historic_data(),
+      species      = input$species,
+      gene         = input$gene,
+      year_range   = input$year_range,
+      samplemethod = input$samplemethod
     )
   })
   
-  # Reactive filter for user selections
-historic_filtered_data <- reactive({
-  req(input$species, input$gene, input$year_range, input$samplemethod)
-  
-  data <- historic_data()
-  
-  # Simple filter without pivot if Presence column already exists
-  if ("Presence" %in% colnames(data)) {
-    result <- data %>%
-      filter(
-        Species == input$species,
-        as.numeric(Year) >= input$year_range[1], 
-        as.numeric(Year) <= input$year_range[2],
-        if (input$samplemethod != "All") Methodology == input$samplemethod else TRUE
-      )
-    return(result)
-  }
-  
-  # If no Presence column, just return filtered data
-  result <- data %>%
-    filter(
-      as.numeric(Year) >= input$year_range[1], 
-      as.numeric(Year) <= input$year_range[2],
-      if (input$samplemethod != "All") Methodology == input$samplemethod else TRUE
-    )
-  return(result)
-})
-
-  # Render Leaflet Map
+  #plot map using Lat long from data
   output$historic_map <- renderLeaflet({
-    data <- historic_data()  # Call the reactive function
-    
+    data <- historic_data()
     if (nrow(data) == 0) {
-      leaflet() %>%
-        addTiles() %>%
-        setView(lng = 0, lat = 0, zoom = 2)
+      leaflet() %>% addTiles() %>% setView(lng = 0, lat = 0, zoom = 2)
     } else {
       leaflet() %>%
         addTiles() %>%
-        setView(lng = mean(data$Longitude, na.rm = TRUE), 
-                lat = mean(data$Latitude, na.rm = TRUE), 
+        setView(lng = mean(data$Longitude, na.rm = TRUE),
+                lat = mean(data$Latitude,  na.rm = TRUE),
                 zoom = 6)
     }
   })
   
-  # Add markers dynamically
   observe({
     filtered_data <- historic_filtered_data()
+    if (nrow(filtered_data) == 0 || is.null(filtered_data)) return()
     
-    if (nrow(filtered_data) == 0 || is.null(filtered_data)) {
-      print("No data available for the selected species.")
-      return()
-    }
-    
-    filtered_data_map <- filtered_data %>% 
-      filter(Presence == "Present" & Species == input$species & Gene == input$gene)  # Changed "Yes" to "Present"
-    
-    print("Filtered data:")
-    print(filtered_data_map)
-    
-    
+    filtered_data_map <- filtered_data %>%
+      filter(Presence == "Present" & Species == input$species & Gene == input$gene)
+    #put points on map where species are present
     if (nrow(filtered_data_map) > 0) {
-      center_lon <- mean(filtered_data_map$Longitude, na.rm = TRUE)
-      center_lat <- mean(filtered_data_map$Latitude, na.rm = TRUE)
-      
-      lon_range <- diff(range(filtered_data_map$Longitude, na.rm = TRUE))
-      lat_range <- diff(range(filtered_data_map$Latitude, na.rm = TRUE))
-      spread <- max(lon_range, lat_range)
-      
-      zoom_level <- case_when(
-        spread > 30 ~ 3,
-        spread > 10 ~ 4,
-        spread > 2  ~ 5,
-        TRUE        ~ 6
-      )
-      
       leafletProxy("historic_map", data = filtered_data_map) %>%
         clearMarkers() %>%
         addCircleMarkers(
-          lng = ~Longitude, lat = ~Latitude,
-          radius = 6, weight = 1.5,
-          color = "#716fa8",
-          fillColor = "#716fa8",
+          lng         = ~Longitude,
+          lat         = ~Latitude,
+          radius      = 6,
+          weight      = 1.5,
+          color       = "#716fa8",
+          fillColor   = "#716fa8",
           fillOpacity = 1,
-          layerId = ~as.character(Site)
+          layerId     = ~as.character(Site)
         ) %>%
-        setView(lng = center_lon, lat = center_lat, zoom = zoom_level)
+        setView(
+          lng  = mean(filtered_data_map$Longitude, na.rm = TRUE),
+          lat  = mean(filtered_data_map$Latitude,  na.rm = TRUE),
+          zoom = calculate_zoom_level(filtered_data_map)
+        )
     }
   })
   
-  # Generate heatmap when a marker is clicked
+  #Click on map and reveal heatmap showing the presence/absence of species at the site. 
   observeEvent(input$historic_map_marker_click, {
-    print("Marker Clicked:")
-    print(input$historic_map_marker_click)
+    req(input$historic_map_marker_click)
     
-    if (!is.null(input$historic_map_marker_click)) {
-      clicked_site <- input$historic_map_marker_click$id
-      print(paste("Clicked site:", clicked_site))
-      
-      site_data <- historic_filtered_data() %>%
-        filter(
-          Site == clicked_site,
-          Species == input$species,
-          input$samplemethod == "All" | Methodology == input$samplemethod
-        ) %>%
-        group_by(Year, Site) %>%
-        summarize(Presence = ifelse("Present" %in% Presence, "Present", "Absent"), .groups = "drop")
-      
-      print(site_data)
-      
-      if (nrow(site_data) > 0) {
-        heatmap_plot <- ggplot(site_data, aes(x = as.factor(Year), y = Site, fill = Presence)) +
-          geom_tile(color = "white") +
-          scale_fill_manual(values = c("Absent" = "#d2d2d2", "Present" = "#716fa8")) +
-          theme_minimal() +
-          labs(title = paste("Species of Interest Presence at", clicked_site), x = "Year", y = "Site")
-        
-        showModal(modalDialog(
-          title = paste("Heatmap for", clicked_site),
-          plotOutput("historic_heatmap"),
-          easyClose = TRUE
-        ))
-        
-        output$historic_heatmap <- renderPlot({ heatmap_plot })
-      } else {
-        print("No data for this site!")
-      }
-    } else {
-      print("Click event is NULL!")
+    clicked_site <- input$historic_map_marker_click$id
+    
+    site_data <- historic_filtered_data() %>%
+      filter(
+        Site    == clicked_site,
+        Species == input$species,
+        input$samplemethod == "All" | Methodology == input$samplemethod
+      ) %>%
+      group_by(Year, Site) %>%
+      summarize(
+        Presence = ifelse("Present" %in% Presence, "Present", "Absent"),
+        .groups  = "drop"
+      )
+    
+    if (nrow(site_data) > 0) {
+      showModal(modalDialog(
+        title     = paste("Heatmap for", clicked_site),
+        plotOutput("historic_heatmap"),
+        easyClose = TRUE
+      ))
+      output$historic_heatmap <- renderPlot({
+        plot_historic_heatmap(site_data, clicked_site)
+      })
     }
   })
   
+  #Plot bar plot for the species, gene and year range to show number of species detected each year
   output$historic_plot <- renderPlot({
     req(input$species, input$gene, input$year_range)
     
     data <- historic_data()
+    if (nrow(data) == 0) return(NULL)
     
-    print(" data:")
-    print(data)
-    
-    if (nrow(data) == 0) {
-      return(NULL)
-    }
-    
-    # Filter data for selected species and date range
     filtered_data <- data %>%
       filter(
-        Species == input$species,
-        Gene == input$gene,
-        as.numeric(Year) >= input$year_range[1], 
+        Species          == input$species,
+        Gene             == input$gene,
+        as.numeric(Year) >= input$year_range[1],
         as.numeric(Year) <= input$year_range[2],
         if (input$samplemethod != "All") Methodology == input$samplemethod else TRUE
       )
     
-    if (nrow(filtered_data) == 0) {
-      return(NULL)
-    }
+    if (nrow(filtered_data) == 0) return(NULL)
     
-    
-    # Standardize Presence values FIRST
-    filtered_data <- filtered_data %>%
-      mutate(Presence = case_when(
-        Presence %in% c("Yes", "Present", "TRUE", "1", TRUE) ~ "Present",
-        Presence %in% c("No", "Absent", "FALSE", "0", FALSE) ~ "Absent",
-        TRUE ~ as.character(Presence)
-      ))
-    
-    # Count Present vs Absent by Year
-    plot_bar_data <- filtered_data %>%
-      group_by(Year, Presence) %>%
-      summarise(Count = n(), .groups = "drop")
-    
-    
-    # Create the bar plot
-    ggplot(plot_bar_data, aes(x = factor(Year), y = Count, fill = factor(Presence))) +
-      geom_bar(stat = "identity", position = "stack") +
-      labs(x = "Year", y = "Site Count", fill = "Presence") +
-      scale_fill_manual(values = c("Absent" = "#d2d2d2", "Present" = "#716fa8")) +
-      scale_y_continuous(breaks = scales::pretty_breaks(), labels = scales::number_format(accuracy = 1)) +
-      theme(legend.position = "top") +
-      ggtitle(bquote(Presence/Absence~of~italic(.(input$species))~by~Year)) +
-      theme(
-        panel.background = element_rect(fill = "transparent", color = NA),
-        plot.background = element_rect(fill = "transparent", color = NA), 
-        legend.background = element_rect(fill = "transparent", color = NA),
-        plot.margin = margin(0, 0, 0, 0),
-        axis.title = element_text(size = 18, colour = "white"),
-        axis.text = element_text(size = 16, colour = "white"),
-        plot.title = element_text(size = 20, colour = "white"),
-        legend.text = element_text(size = 16, colour = "white"),
-        legend.title = element_blank(),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor = element_blank(),
-        strip.background = element_blank(),
-        strip.text = element_blank()
-      )
+    plot_historic_bar(filtered_data, input$species)
   }, bg = "transparent")
   
   
