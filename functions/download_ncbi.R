@@ -1,13 +1,13 @@
 download_ncbi <- function(crabs_path, taxa_vector, final_query_str, ncbi_email) {
   
   print("Downloading NCBI database...")
-  
+  #Create chunks of the vector to stop download crashing
   chunk_size <- 10
   chunks <- split(taxa_vector, ceiling(seq_along(taxa_vector) / chunk_size))
   
   for (i in seq_along(chunks)) {
     taxa_chunk <- chunks[[i]]
-    
+    # Create query for each chunk 
     # For each taxon, apply it to each OR-separated part of the gene query
     taxa_with_genes <- lapply(taxa_chunk, function(taxon) {
       gene_parts <- strsplit(final_query_str, "\\s+OR\\s+", perl = TRUE)[[1]]
@@ -27,6 +27,7 @@ download_ncbi <- function(crabs_path, taxa_vector, final_query_str, ncbi_email) 
     cat("Actual Executed Query:\n", final_chunk_query, "\n")
     cat("========================\n\n")
     
+    #NCBI download commanf
     ncbi_command <- paste(crabs_path,
                           "--download-ncbi",
                           "--database nucleotide",
@@ -37,10 +38,13 @@ download_ncbi <- function(crabs_path, taxa_vector, final_query_str, ncbi_email) 
     system(ncbi_command, wait = TRUE)
   }
   
+  #Concatenate ncbi files together
   system("cat intermediate/ncbi_*.fasta > intermediate/merged_ncbi_output.fasta")
   
+  #Remove N's from the start and end of sequences 
   system("awk '{if (/>.*/) {print} else { sub(/^N*/, \"\"); sub(/N*$/, \"\"); print}}' intermediate/merged_ncbi_output.fasta > intermediate/merged_ncbi_output_cleaned.fasta")
   
+  #Import downloaded NCBI sequences into CRABS
   system(paste(crabs_path,
                "--import --import-format ncbi",
                "--input intermediate/merged_ncbi_output_cleaned.fasta",
