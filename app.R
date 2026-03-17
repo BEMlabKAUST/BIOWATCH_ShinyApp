@@ -6,7 +6,6 @@ if (Sys.info()[["sysname"]] == "Darwin") {
   options(browser = Sys.which("xdg-open"))
 }
 
-
 library(shiny)
 library(shinyWidgets)
 library(shinyjs)
@@ -25,13 +24,17 @@ library(reticulate)
 library(future)
 library(promises)
 library(digest)
+library(geojsonsf)
 
 source("functions/download_silva.R")
 source("functions/import_custom_fasta.R")
 source("functions/download_bold.R")
 source("functions/download_ncbi.R")
+source("functions/download_gbif.R")
 source("functions/create_database.R")
 source("functions/database_comparison.R")
+source("functions/database_results.R")
+source("functions/wkt_polygon.R")
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -984,7 +987,20 @@ server <- function(input, output, session) {
   Sys.setenv(PYTHONWARNINGS="ignore::UserWarning")
 
   crabs_path <- Sys.which("crabs")
+  ncbi_email <- Sys.getenv("NCBI_EMAIL")
   
+  genera_rv       <- reactiveVal(NULL)
+  species_list_rv <- reactiveVal(NULL)
+  query_mode_rv   <- reactiveVal(NULL)
+  selected_sources_rv <- reactiveVal(NULL)
+  gbif_request_id <- reactiveVal(NULL)
+  gbif_results <- reactiveVal(NULL)
+  additional_species_rv <- reactiveVal(NULL)
+  species_dataframe_rv  <- reactiveVal(NULL)
+  cache_path_rv <- reactiveVal(NULL)
+  queries <- reactiveVal(list())
+  show_results <- reactiveVal(FALSE)
+  polygon_wkt <- reactiveVal(NULL)
   
   check_taxonomy_files <- function(data_dir, max_age_days = 180) {
     files <- c(
@@ -1107,12 +1123,7 @@ server <- function(input, output, session) {
   })
 
 
-  gbif_request_id <- reactiveVal(NULL)
-  gbif_results <- reactiveVal(NULL)
-  additional_species_rv <- reactiveVal(NULL)
-  species_dataframe_rv  <- reactiveVal(NULL)
-  
-  ncbi_email <- Sys.getenv("NCBI_EMAIL")
+
   
   # Load data outside reactive context
   historic_data <- reactive({
@@ -2246,7 +2257,6 @@ tryCatch({
     )
   })
   
-  
   output$historic_gene_select <- renderUI({
     data <- historic_data()
     
@@ -2327,9 +2337,6 @@ historic_filtered_data <- reactive({
   return(result)
 })
 
-
-
-  
   # Render Leaflet Map
   output$historic_map <- renderLeaflet({
     data <- historic_data()  # Call the reactive function
@@ -2501,9 +2508,7 @@ historic_filtered_data <- reactive({
   }, bg = "transparent")
   
   
-####################
-####OUTPUT FILES####
-####################
+####Blast Output Files####
 
   db_name <- reactive({
     req(input$species_file, input$amplicon_of_interest)
@@ -2532,96 +2537,11 @@ historic_filtered_data <- reactive({
     }
   )
   
-######################### 
-####EXAMPLE DOWNLOADS#### 
-#########################
-   
-  output$download_COI <- downloadHandler(
-    filename = function() {
-      "example_COI.fasta" # Example COI file
-    },
-    content = function(file) {
-      # Path to the file in the app folder
-      file.copy("data/example_COI.fasta", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  output$download_18S <- downloadHandler(
-    filename = function() {
-      "example_18S.fasta" # Example 18S file
-    },
-    content = function(file) {
+###########################  
+###DATABASE CONSTRUCTION###
+########################### 
+####WKT Selection####
 
-      file.copy("data/example_18S.fasta", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  output$download_18S_table <- downloadHandler(
-    filename = function() {
-      "example_18S_asvtable.csv" # Example ASV file
-    },
-    content = function(file) {
-    
-      file.copy("data/example_18S_asvtable.csv", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  output$download_18S_coord <- downloadHandler(
-    filename = function() {
-      "example_18S_coordinates.tsv" # Example coordinate file 
-    },
-    content = function(file) {
-   
-      file.copy("data/example_18S_coordinates.tsv", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  
-  
-  output$download_COI_table <- downloadHandler(
-    filename = function() {
-      "example_COI_asvtable.csv" # Example ASV file
-    },
-    content = function(file) {
-      
-      file.copy("data/example_COI_asvtable.csv", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  output$download_COI_coord <- downloadHandler(
-    filename = function() {
-      "example_COI_coordinates.tsv" # Example coordinate file 
-    },
-    content = function(file) {
-      
-      file.copy("data/example_COI_coordinates.tsv", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  output$download_custom <- downloadHandler(
-    filename = function() {
-      "example_custom.fasta" # Example custom file
-    },
-    content = function(file) {
-      
-      file.copy("data/example.custom.fasta", file)
-    },
-    contentType = "application/octet-stream" 
-  )
-  
-  #############################  
-  ####DATABASE CONSTRUCTION####
-  ############################# 
-  
-  queries <- reactiveVal(list())
-  show_results <- reactiveVal(FALSE)
-  
   output$show_results <- reactive({
     show_results()
   })
@@ -2646,35 +2566,13 @@ historic_filtered_data <- reactive({
         }")
   })
   
-#Polygon for WKT coordinates
-  polygon_wkt <- reactiveVal(NULL)
-  
-  # Observe when a shape is drawn
+  #Take the polygon drawn by the user to create WKT coordinates
   observeEvent(input$map_draw_new_feature, {
     req(input$map_draw_new_feature)
-    print(input$map_draw_new_feature)
     
-    # Convert the drawn feature to WKT
-    feature <- input$map_draw_new_feature
-    geojson <- feature$geometry  # GeoJSON format of the drawn feature
-    
-    # Flatten the coordinates and ensure it's numeric
-    coords <- unlist(geojson$coordinates)  # Flatten the coordinates
-    
-    # Convert to matrix or array for st_polygon
-    coords_matrix <- matrix(coords, ncol = 2, byrow = TRUE)  # Create a matrix with two columns (lat, lon)
-    
-    # Convert the matrix to an sf polygon
-    polygon_sf <- st_polygon(list(coords_matrix)) %>%
-      st_sfc(crs = 4326)  # Assign the correct CRS
-    
-    # Convert to WKT using wk
-    wkt <- wk::as_wkt(polygon_sf)
-    
-    
+    wkt <- geojson_to_wkt(input$map_draw_new_feature)
     polygon_wkt(wkt)
     
-    # Display WKT output
     output$wkt_output <- renderText({
       paste("WKT coordinates: ", polygon_wkt())
     })
@@ -2690,7 +2588,7 @@ historic_filtered_data <- reactive({
     }
   })
   
-  
+  #Output the WKT coordinates
   output$wkt_output <- renderText({
     paste("WKT coordinates: ", selected_wkt())
   })
@@ -2700,6 +2598,11 @@ historic_filtered_data <- reactive({
     leafletProxy("database_map") %>% clearShapes()
     output$wkt_output <- renderText("")
   })
+  
+  
+
+####Query Options####
+
   
   # Dynamic UI for query selection
   output$selection_fields <- renderUI({
@@ -2712,10 +2615,6 @@ historic_filtered_data <- reactive({
       )
     })
   })
- 
-################################# 
-####DATABASE CREATION OPTIONS####
-################################# 
   
   # Add new NCBI query
   observeEvent(input$add_selection, {
@@ -2740,209 +2639,76 @@ historic_filtered_data <- reactive({
       queries(query_list)
     }
   })
+ 
+
+####Create taxa list for downloads####
+
   
-  
-  
-  ##########################################      
-  ####Presence/Absence in BLAST database####  
-  ##########################################
-  
-  species_presence <- reactive({
+  observeEvent(input$generate_run, {
     req(input$species_file)
-    req(species_dataframe_rv())   
     
-    species_list <- readLines(input$species_file$datapath)
-    species_list <- trimws(species_list)
+    showModal(modalDialog(
+      title = "Processing",
+      "Running Database Construction... Please wait.",
+      footer = NULL
+    ))
+    
+    #get the options selected for the download
+    query_mode_rv(input$query_mode)
+    selected_sources_rv(input$source)
+    
+    #read species list
+    species_list <- readLines(input$species_file$datapath) %>% trimws()
+    species_list_rv(species_list) #store as reactive
+    #get genera from the species list
+    genera       <- unique(sapply(species_list, function(x) strsplit(x, " ")[[1]][1]))
+    genera_rv(genera) #store as reactive
     
     
-    cleaned_data <- read.delim("intermediate/merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
-    species_column <- cleaned_data[, 10]   # species column
+    #function to use gbif for family ids
+    family_taxon_ids <- get_family_taxon_ids(species_list)
     
-    df <- species_dataframe_rv()
-    
-    presence_df <- df %>%
-      dplyr::mutate(
-        Present = canonicalName %in% species_column
-      ) %>%
-      dplyr::group_by(SOI) %>%
-      dplyr::summarise(
-        Presence = ifelse(any(Present), "Yes", "No")
-      )
-    
-    colnames(presence_df) <- c("Species", "Presence")
-    
-    write.csv(presence_df,
-              file.path("data", paste0(db_name(), "_species_presence.csv")),
-              row.names = FALSE)
-    
-    percentage_present <- (sum(presence_df$Presence == "Yes") / nrow(presence_df)) * 100
-    
-    list(presence_df = presence_df, percentage_present = percentage_present)
-  })
-  
-  output$presence_table <- renderTable({
-    req(species_presence())
-    species_presence()$presence_df
-  })
-  
-  #Downlaod table
-  output$download_presence <- downloadHandler(
-    filename = function() paste0(db_name(), ".species_presence.csv" ),
-    content = function(file) {
-      write.csv(species_presence()$presence_df, file, row.names = FALSE)
+    #No taxon ID notification
+    if (length(family_taxon_ids) == 0) {
+      showNotification("No valid taxon IDs found!", type = "error")
+      removeModal()
+      return(NULL)
     }
-  )
-  
-  output$dynamic_heatmap <- renderUI({
-    req(species_presence())
     
-    species_count <- nrow(species_presence()$presence_df)
-    plot_height <- max(300, species_count * 30)  # Ensure a minimum height of 300px
-    
-    plotOutput("heatmap", height = paste0(plot_height, "px"))
-  })
-  
-  
-  # Render Heat Map
-  output$heatmap <- renderPlot({
-    req(species_presence())
-    
-    heatmap_data <- species_presence()$presence_df
-    print(heatmap_data)
-    
-    heatmap_data <- as.data.frame(heatmap_data)
-    
-    # Create heatmap
-    library(ggplot2)
-    ggplot(heatmap_data, aes(x = "Presence", y = Species, fill = factor(Presence))) +
-      geom_tile(colour = "grey80", linewidth = 1) +
-      scale_fill_manual(values = c("No" = "#d2d2d2", "Yes" = "#716fa8"), name = "Presence") +
-      theme_bw() +
-      theme(axis.text.x = element_blank(),
-            axis.text.y = element_text(size = 12),
-            axis.title.y = element_text(size = 14)) +
-      theme(legend.position = "") +
-      labs(
-        x = "",
-        y = "Species of Interest"
-      )+ 
-      theme(panel.background = element_rect(fill = "transparent", color = NA),  # Transparent background
-            plot.background = element_rect(fill = "transparent", color = NA), 
-            legend.background = element_rect(fill = "transparent", color = NA), # Transparent background
-            plot.margin = margin(0, 0, 0, 0),
-            axis.title = element_text(size = 18, colour = "white"),
-            axis.text = element_text(size = 16, colour = "white"),
-            plot.title = element_text(size = 20, colour = "white"),
-            legend.text = element_text(size= 16, colour = "white"),
-            legend.title = element_blank(),
-            panel.grid.major.x = element_blank(),
-            panel.grid.minor = element_blank(),
-            strip.background = element_blank(),
-            strip.text = element_blank())
-  }, bg = "transparent")
-  
-  
-  output$species_summary <- renderText({
-    species_info <- species_presence()
-    sprintf("Percentage of species from list present in the database: %.2f%%", species_info$percentage_present)
-  })
-  
-output$download_database_species_list <- downloadHandler(
-    
-    filename = function() {
-      paste0("database_species_", Sys.Date(), ".txt")
-    },
-    
-    content = function(file) {
-      
-      
-      cleaned_data <- read.delim("intermediate/merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
-      species <- cleaned_data[, 10]
-      species <- trimws(species)
-      species <- species[!is.na(species) & nzchar(species)]
-      species <- sort(unique(species))
-      
-      writeLines(species, file)
+    #WKT error notification
+    wkt_polygon <- selected_wkt()
+    if (is.null(wkt_polygon) || nchar(wkt_polygon) < 10) {
+      showNotification("No valid polygon selected. Draw a region first!", type = "error")
+      removeModal()
+      return(NULL)
     }
-  )
-  
-observeEvent(input$generate_run, {
-  
-  req(input$species_file)
-  
-  showModal(modalDialog(
-    title = "Processing",
-    "Running Database Construction... Please wait.",
-    footer = NULL
-  ))
-  
-  ######################## 
-  ####CREATE TAXA LIST####
-  ######################## 
-  
-  species_list <- readLines(input$species_file$datapath) %>% trimws()
-  genera <- unique(sapply(species_list, function(x) strsplit(x, " ")[[1]][1]))
-  
-  #Get family taxon IDs
-  get_family_taxon_id <- function(species) {
-    result <- name_backbone(name = species)
-    if (!is.null(result$familyKey)) result$familyKey else NA
-  }
-  
-  family_taxon_ids <- unique(na.omit(sapply(species_list, get_family_taxon_id)))
-  # Special case adjustment
-  if (any(family_taxon_ids %in% c(7336, 7334))) {
-    family_taxon_ids <- unique(c(family_taxon_ids, 8596, 8597))
-  }
-  
-  if (length(family_taxon_ids) == 0) {
-    showNotification("No valid taxon IDs found!", type = "error")
-    removeModal()
-    return(NULL)
-  }
-  
-  #Submit GBIF download based on geographic coordinates
-  wkt_polygon <- selected_wkt()
-  if (is.null(wkt_polygon) || nchar(wkt_polygon) < 10) {
-    showNotification("No valid polygon selected. Draw a region first!", type = "error")
-    removeModal()
-    return(NULL)
-  }
-  
-  # Create cache directory if it doesn't exist
-  cache_dir <- file.path(getwd(), "gbif_cache")
-  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
-  
-  # Create cache key from taxon IDs and WKT polygon
-  cache_key <- digest::digest(list(family_taxon_ids, wkt_polygon), algo = "md5")
-  cache_file_path <- file.path(cache_dir, paste0(cache_key, ".rds"))  # Renamed to avoid confusion
-  
-  # Check if cache exists and is less than 30 days old
-  use_cache <- FALSE
-  if (file.exists(cache_file_path)) {
-    cache_age <- difftime(Sys.time(), file.info(cache_file_path)$mtime, units = "days")
-    if (cache_age < 30) {
-      use_cache <- TRUE
-      cached_data <- readRDS(cache_file_path)
-      gbif_results(cached_data)
+    
+    #see if there is a gbif cache of taxa for the coordinates
+    cache        <- check_gbif_cache(family_taxon_ids, wkt_polygon)
+    cache_path_rv(cache$path)
+    
+    if (cache$use_cache) {
+      gbif_results(cache$data)
       showNotification("Using cached GBIF data", type = "message", duration = 5)
+    } else {
+      req_download <- submit_gbif_download(
+        family_taxon_ids = family_taxon_ids,
+        wkt_polygon      = wkt_polygon
+      ) #Download new gbif data if no cache found.
+      gbif_request_id(req_download)
+      showNotification("GBIF download started...", type = "message", duration = 5)
     }
-  }
-  
-  if (!use_cache) {
-    req_download <- occ_download(
-      pred_and(pred_in("taxonKey", family_taxon_ids),
-               pred("geometry", wkt_polygon)),
-      format = "SIMPLE_CSV",
-      user = Sys.getenv("GBIF_USER"),
-      pwd = Sys.getenv("GBIF_PWD"),
-      email = Sys.getenv("GBIF_EMAIL")
+    
+    #function to get the synonyms for the taxa in the list
+    synonyms_df <- get_synonyms(
+      species_list      = species_list,
+      db_name           = db_name(),
+      get_synonyms_gbif = get_synonyms_gbif
     )
-    gbif_request_id(req_download)
-    showNotification("GBIF download started…", type = "message", duration = 5)
-  }
-  
-  #Get information from GBIF
+    species_dataframe_rv(synonyms_df)
+  })
+
+  # Check the GBIF download status and process when ready
   observe({
     req(gbif_request_id())
     invalidateLater(5000)
@@ -2952,220 +2718,213 @@ observeEvent(input$generate_run, {
       error = function(e) return(NULL)
     )
     
-    if (!is.null(meta)) {
-      if (meta$status == "SUCCEEDED") {
-        zipfile <- occ_download_get(gbif_request_id())
-        zip_contents <- unzip(zipfile, list = TRUE)$Name
-        occ_file <- zip_contents[grepl("\\.csv$", zip_contents)][1]
-        if (!is.na(occ_file)) {
-          occ <- read.delim(unz(zipfile, occ_file), sep = "\t", stringsAsFactors = FALSE)
-          gbif_results(occ)
-          # Save to cache with explicit error handling
-          tryCatch({
-            saveRDS(occ, cache_file_path)
-            showNotification(paste("Cached to:", cache_file_path), type = "message", duration = 3)
-          }, error = function(e) {
-            showNotification(paste("Cache save failed:", e$message), type = "warning", duration = 5)
-          })
-        }
-        gbif_request_id(NULL)
+    if (!is.null(meta) && meta$status == "SUCCEEDED") {
+      occ <- process_gbif_zip(gbif_request_id())
+      if (!is.null(occ)) {
+        gbif_results(occ)
+        saved <- save_gbif_cache(occ, cache_path_rv())
+        if (saved) showNotification("GBIF data cached", type = "message", duration = 3)
       }
+      gbif_request_id(NULL)
     }
   })
   
+  # Update additional species from GBIF results
   observeEvent(gbif_results(), {
     occ <- gbif_results()
     if (!is.null(occ) && "species" %in% colnames(occ)) {
       additional_species_rv(unique(occ$species[!is.na(occ$species) & nzchar(occ$species)]))
     }
   })
-    
-    #Get synonyms
-    observeEvent(species_list, {
-      df <- do.call(
-        rbind,
-        lapply(species_list, function(sp) {
-          Sys.sleep(0.2)
-          get_synonyms_gbif(sp)
-        })
-      )
-      species_dataframe_rv(df)
-      
-      write.table(df, paste0("databases/", db_name(), "_synonyms.txt"),
-                  sep = "\t", row.names = FALSE, quote = FALSE)
-    })
-    
-    #Compute taxa list
-    taxa_ready <- reactive({
-      req(genera, additional_species_rv(), species_dataframe_rv())
-      unique(c(genera, additional_species_rv(), species_dataframe_rv()$canonicalName))
-    })
-  
-    observeEvent(taxa_ready(), {
-      taxa_vector <- taxa_ready()
-      
-      query_mode <- input$query_mode
-      selected_sources <- input$source
-      
-#####################
-####NCBI DOWNLOAD####
-#####################
-      
-      
-      #Make the query for ncbi download.
-      query_commands <- if (query_mode == "add") {
-        custom_query <- input$custom_query
-        if (!is.null(custom_query) && nzchar(trimws(custom_query))) {
-          custom_query
-        } else {
-          ""
-        }
-      } else {
-        query_list <- lapply(seq_along(queries()), function(i) {
-          paste0(input[[paste0("query_", i)]], "[", input[[paste0("field_type_", i)]], "]")
-        })
-        paste(query_list, collapse = " OR ")
-      }
-      
-      final_query_str <- query_commands
-      output$query_output <- renderText({ final_query_str })
-      
-      # Call the ncbi download function
-      if ("ncbi" %in% selected_sources) {
-        success <- download_ncbi(
-          crabs_path      = crabs_path,
-          taxa_vector     = taxa_vector,
-          final_query_str = final_query_str,
-          ncbi_email      = ncbi_email
-        )
-        if (!success) {
-          showNotification("NCBI download failed", type = "error")
-          return(NULL)
-        }
-      }
-  
-#####################
-####BOLD DOWNLOAD####
-#####################
-      
-      if ("bold" %in% selected_sources) {
-        success <- download_bold(
-          crabs_path  = crabs_path,
-          taxa_vector = taxa_vector,
-          bold_marker = input$bold_marker
-        )
-        if (!success) {
-          showNotification("BOLD download failed", type = "error")
-          return(NULL)
-        }
-      }
-      
-###################### 
-####SILVA DOWNLOAD####      
-######################
-      
-      if ("silva" %in% selected_sources) {
-        download_silva(
-          crabs_path   = crabs_path,
-          silva_marker = input$silva_marker,
-          taxa_vector  = taxa_vector
-        )
-      }
-      
-######################### 
-####CUSTOM FASTA FILE####     
-#########################
-      
-      if (!is.null(input$custom_fasta)) {
-        success <- import_custom_fasta(
-          crabs_path        = crabs_path,
-          custom_fasta_path = input$custom_fasta$datapath
-        )
-        if (!success) {
-          showNotification("Custom FASTA import failed", type = "error")
-          return(NULL)
-        }
-      }
-      
-#####################      
-###CREATE DATABASE###
-#####################
-       #create the blast database from the downloaded sequences.
-success <- create_database(
-        crabs_path      = crabs_path,
-        selected_sources = selected_sources,
-        custom_fasta    = input$custom_fasta,
-        forward_primer  = input$forward_primer,
-        reverse_primer  = input$reverse_primer,
-        db_name         = db_name()
-      )
-      
-      if (!success) {
-        showNotification("Database creation failed", type = "error")
-        return(NULL)
-      }
-      
 
-#################################     
-####DELETE INTERMEDIATE FILES####
-#################################
-      
-      #Delete the intermediate files when the page is closed
-      if (.Platform$OS.type == "windows") {
-        
-      } else {
-        
-      }
+# Build taxa vector when all components ready
+taxa_ready <- reactive({
+  req(genera_rv(), additional_species_rv(), species_dataframe_rv())
+  build_taxa_vector(genera_rv(), gbif_results(), species_dataframe_rv())
+})
 
-      
-      
-      onSessionEnded(function() {
-        if (.Platform$OS.type == "windows") {
-          system("del /Q intermediate/insilico_*.txt", intern = TRUE)
-          system("del /Q intermediate/*.zip", intern = TRUE)
-          system("del /Q intermediate/ncbi_*.fasta", intern = TRUE)
-          system("del /Q intermediate/bold_*.tsv", intern = TRUE)
-          system("del /Q intermediate/merged_combined_output.*", intern = TRUE)
-          system("del /Q intermediate/silva_*", intern = TRUE)
-          system("del /Q intermediate/merged_silva_output.tax.tsv", intern = TRUE)
-          system("del /Q intermediate/*_cleaned.fasta", intern = TRUE)
-          system("del /Q intermediate/merged_ncbi_output*", intern = TRUE)
-          system("del /Q intermediate/merged_bold_output*", intern = TRUE)
-          system("del /Q intermediate/combined.db*", intern = TRUE)
-          system("del /Q intermediate/taxonomy.dictionary.*", intern = TRUE)
-          system("del /Q intermediate/custom_fasta_output.*", intern = TRUE)
-        } else {
-          system("rm intermediate/insilico_*.txt")
-          system("rm intermediate/*.zip")
-          system("rm intermediate/ncbi_*.fasta")
-          system("rm intermediate/bold_*.tsv")
-          system("rm intermediate/merged_combined_output.*")
-          system("rm intermediate/silva_*")
-          system("rm intermediate/merged_silva_output.tax.tsv")
-          system("rm intermediate/*_cleaned.fasta")  
-          system("rm intermediate/merged_ncbi_output*")
-          system("rm intermediate/merged_bold_output*")
-          system("rm intermediate/combined.db*")
-          system("rm intermediate/taxonomy.dictionary.*")
-          system("rm intermediate/custom_fasta_output.*")
-        }
-      })      
-      
-      
-      
-      # Display results
-      output$execution_output <- renderText({ paste(all_exec_output, collapse = "\n") })
-      show_results(TRUE)
+
+
+####Run Downloads####
+
+observeEvent(taxa_ready(), {
+  taxa_vector      <- taxa_ready()
+  selected_sources <- selected_sources_rv()
+
+###NCBI DOWNLOAD###
+
+  #Create the query command for use in the ncbi download.
+  query_commands <- if (query_mode_rv() == "add") {
+    custom_query <- input$custom_query
+    if (!is.null(custom_query) && nzchar(trimws(custom_query))) {
+      custom_query
+    } else {
+      ""
+    }
+  } else {
+    query_list <- lapply(seq_along(queries()), function(i) {
+      paste0(input[[paste0("query_", i)]], "[", input[[paste0("field_type_", i)]], "]")
+    })
+    paste(query_list, collapse = " OR ")
+  }
+  
+  final_query_str <- query_commands
+  output$query_output <- renderText({ final_query_str })
+  
+  #if ncbi is selected then run the download of ncbi sequences
+  if ("ncbi" %in% selected_sources) {
+    success <- download_ncbi(
+      crabs_path      = crabs_path,
+      taxa_vector     = taxa_vector,
+      final_query_str = final_query_str,
+      ncbi_email      = ncbi_email
+    )
+    if (!success) {
+      showNotification("NCBI download failed", type = "error")
       removeModal()
-      
-      
-      updateTabsetPanel(session, "main_tabs", selected = "Results")
-    })
-  })
+      return(NULL)
+    }
+  }
+  
+###BOLD DOWNLOAD###
 
-#########################
-###Database Comparison###
-#########################
+  #if bold is selected then run the download of bold sequences
+  if ("bold" %in% selected_sources) {
+    success <- download_bold(
+      crabs_path  = crabs_path,
+      taxa_vector = taxa_vector,
+      bold_marker = input$bold_marker
+    )
+    if (!success) {
+      showNotification("BOLD download failed", type = "error")
+      removeModal()
+      return(NULL)
+    }
+  }
+  
+
+###SILVA DOWNLOAD###
+  
+  #if silva is selected then run the download of silva sequences
+  if ("silva" %in% selected_sources) {
+    success <- download_silva(
+      crabs_path   = crabs_path,
+      silva_marker = input$silva_marker,
+      taxa_vector  = taxa_vector
+    )
+    if (!success) {
+      showNotification("SILVA download failed", type = "error")
+      removeModal()
+      return(NULL)
+    }
+  }
+  
+###IMPORT CUSTOM FASTA FILE###
+  
+  #run function if custom fasta is selected
+  if (!is.null(input$custom_fasta)) {
+    success <- import_custom_fasta(
+      crabs_path        = crabs_path,
+      custom_fasta_path = input$custom_fasta$datapath
+    )
+    if (!success) {
+      showNotification("Custom FASTA import failed", type = "error")
+      removeModal()
+      return(NULL)
+    }
+  }
+  
+####CREATE BLAST DATABASE####
+  
+  #run function to create the blast database.
+  success <- create_database(
+    crabs_path       = crabs_path,
+    selected_sources = selected_sources,
+    custom_fasta     = input$custom_fasta,
+    forward_primer   = input$forward_primer,
+    reverse_primer   = input$reverse_primer,
+    db_name          = db_name()
+  )
+  
+  if (!success) {
+    showNotification("Database creation failed", type = "error")
+    removeModal()
+    return(NULL)
+  }
+  
+  output$execution_output <- renderText({ paste(all_exec_output, collapse = "\n") })
+  show_results(TRUE)
+  removeModal()
+  updateTabsetPanel(session, "main_tabs", selected = "Results")
+})
+
+####Database Creation results####
+
+#Create dataframe for species presence from the download results
+species_presence <- reactive({
+  req(input$species_file, species_dataframe_rv())
+  compute_species_presence(
+    species_dataframe  = species_dataframe_rv(),
+    cleaned_data_path  = "intermediate/merged_combined_output.tax.cleaned.final.tsv",
+    db_name            = db_name()
+  )
+})
+
+output$presence_table <- renderTable({
+  req(species_presence())
+  species_presence()$presence_df
+})
+
+#Create heatmap to show the presence/absence results
+
+output$heatmap <- renderPlot({
+  req(species_presence())
+  plot_species_presence(species_presence()$presence_df)
+}, bg = "transparent")
+
+output$dynamic_heatmap <- renderUI({
+  req(species_presence())
+  plot_height <- max(300, nrow(species_presence()$presence_df) * 30)
+  plotOutput("heatmap", height = paste0(plot_height, "px"))
+})
+
+####Output files for database####
+
+#Downlaod table of species presence absence of listed species
+output$download_presence <- downloadHandler(
+  filename = function() paste0(db_name(), ".species_presence.csv" ),
+  content = function(file) {
+    write.csv(species_presence()$presence_df, file, row.names = FALSE)
+  }
+)
+
+#calculate the percentage of species on list found in database
+output$species_summary <- renderText({
+  species_info <- species_presence()
+  sprintf("Percentage of species from list present in the database: %.2f%%", species_info$percentage_present)
+})
+
+#Download table of all species in the database
+output$download_database_species_list <- downloadHandler(
+  
+  filename = function() {
+    paste0("database_species_", Sys.Date(), ".txt")
+  },
+  
+  content = function(file) {
+    
+    
+    cleaned_data <- read.delim("intermediate/merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
+    species <- cleaned_data[, 10]
+    species <- trimws(species)
+    species <- species[!is.na(species) & nzchar(species)]
+    species <- sort(unique(species))
+    
+    writeLines(species, file)
+  }
+)
+
+####Database Comparison####
 
 comparison_data_folder <- "data"
 
@@ -3202,7 +2961,7 @@ output$download_dbcomparison_table <- downloadHandler(
   }
 )
 
-# Heatmap
+# Plot Heatmap
 output$dbcomparison_heatmap <- renderPlot({
   df <- dbcomparison_data()
   req(nrow(df) > 0)
@@ -3211,6 +2970,127 @@ output$dbcomparison_heatmap <- renderPlot({
 height = function() dbcomparison_plot_height(dbcomparison_data()),
 width  = function() dbcomparison_plot_width(dbcomparison_data()))
 
-  
+
+#####################
+###Session cleanup###
+#####################
+
+onSessionEnded(function() {
+  if (.Platform$OS.type == "windows") {
+    system("del /Q intermediate/insilico_*.txt", intern = TRUE)
+    system("del /Q intermediate/*.zip", intern = TRUE)
+    system("del /Q intermediate/ncbi_*.fasta", intern = TRUE)
+    system("del /Q intermediate/bold_*.tsv", intern = TRUE)
+    system("del /Q intermediate/merged_combined_output.*", intern = TRUE)
+    system("del /Q intermediate/silva_*", intern = TRUE)
+    system("del /Q intermediate/merged_silva_output.tax.tsv", intern = TRUE)
+    system("del /Q intermediate/*_cleaned.fasta", intern = TRUE)
+    system("del /Q intermediate/merged_ncbi_output*", intern = TRUE)
+    system("del /Q intermediate/merged_bold_output*", intern = TRUE)
+    system("del /Q intermediate/combined.db*", intern = TRUE)
+    system("del /Q intermediate/taxonomy.dictionary.*", intern = TRUE)
+    system("del /Q intermediate/custom_fasta_output.*", intern = TRUE)
+  } else {
+    system("rm -f intermediate/insilico_*.txt")
+    system("rm -f intermediate/*.zip")
+    system("rm -f intermediate/ncbi_*.fasta")
+    system("rm -f intermediate/bold_*.tsv")
+    system("rm -f intermediate/merged_combined_output.*")
+    system("rm -f intermediate/silva_*")
+    system("rm -f intermediate/merged_silva_output.tax.tsv")
+    system("rm -f intermediate/*_cleaned.fasta")
+    system("rm -f intermediate/merged_ncbi_output*")
+    system("rm -f intermediate/merged_bold_output*")
+    system("rm -f intermediate/combined.db*")
+    system("rm -f intermediate/taxonomy.dictionary.*")
+    system("rm -f intermediate/custom_fasta_output.*")
+  }
+})
+
+
+######################### 
+####EXAMPLE DOWNLOADS#### 
+#########################
+
+output$download_COI <- downloadHandler(
+  filename = function() {
+    "example_COI.fasta" # Example COI file
+  },
+  content = function(file) {
+    # Path to the file in the app folder
+    file.copy("data/example_COI.fasta", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+output$download_18S <- downloadHandler(
+  filename = function() {
+    "example_18S.fasta" # Example 18S file
+  },
+  content = function(file) {
+    
+    file.copy("data/example_18S.fasta", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+output$download_18S_table <- downloadHandler(
+  filename = function() {
+    "example_18S_asvtable.csv" # Example ASV file
+  },
+  content = function(file) {
+    
+    file.copy("data/example_18S_asvtable.csv", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+output$download_18S_coord <- downloadHandler(
+  filename = function() {
+    "example_18S_coordinates.tsv" # Example coordinate file 
+  },
+  content = function(file) {
+    
+    file.copy("data/example_18S_coordinates.tsv", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+
+
+output$download_COI_table <- downloadHandler(
+  filename = function() {
+    "example_COI_asvtable.csv" # Example ASV file
+  },
+  content = function(file) {
+    
+    file.copy("data/example_COI_asvtable.csv", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+output$download_COI_coord <- downloadHandler(
+  filename = function() {
+    "example_COI_coordinates.tsv" # Example coordinate file 
+  },
+  content = function(file) {
+    
+    file.copy("data/example_COI_coordinates.tsv", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+output$download_custom <- downloadHandler(
+  filename = function() {
+    "example_custom.fasta" # Example custom file
+  },
+  content = function(file) {
+    
+    file.copy("data/example.custom.fasta", file)
+  },
+  contentType = "application/octet-stream" 
+)
+
+
 }
 shinyApp(ui, server)
