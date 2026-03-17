@@ -26,6 +26,11 @@ library(future)
 library(promises)
 library(digest)
 
+source("functions/download_silva.R")
+source("functions/import_custom_fasta.R")
+source("functions/download_bold.R")
+source("functions/download_ncbi.R")
+source("functions/create_database.R")
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -2978,104 +2983,53 @@ observeEvent(input$generate_run, {
 ####NCBI DOWNLOAD####
 #####################
       
+      
+      #Make the query for ncbi download.
       query_commands <- if (query_mode == "add") {
-        lapply(queries(), function(q) paste0(q$query, "[", q$field_type, "]"))
+        custom_query <- input$custom_query
+        if (!is.null(custom_query) && nzchar(trimws(custom_query))) {
+          custom_query
+        } else {
+          ""
+        }
       } else {
-        lapply(seq_along(queries()), function(i) {
+        query_list <- lapply(seq_along(queries()), function(i) {
           paste0(input[[paste0("query_", i)]], "[", input[[paste0("field_type_", i)]], "]")
         })
+        paste(query_list, collapse = " OR ")
       }
-      final_query_str <- paste(query_commands, collapse = " OR ")
+      
+      final_query_str <- query_commands
       output$query_output <- renderText({ final_query_str })
       
-      all_exec_output <- NULL
-      
+      # Call the ncbi download function
       if ("ncbi" %in% selected_sources) {
-        chunk_size <- 25
-        chunks <- split(taxa_vector, ceiling(seq_along(taxa_vector)/chunk_size))
-        for (i in seq_along(chunks)) {
-          taxa_chunk <- chunks[[i]]
-          taxa_chunk_query <- paste0(taxa_chunk, "[ORGN]", collapse = " OR ")
-          final_chunk_query <- paste(taxa_chunk_query, "AND (", final_query_str, ") AND (200 [SLEN] :50000[SLEN])")
-          ncbi_command <- paste(crabs_path,
-                                "--download-ncbi",
-                                "--database nucleotide",
-                                "--query", shQuote(final_chunk_query),
-                                "--output", paste0("intermediate/ncbi_", i, ".fasta"),
-                                "--email", ncbi_email,
-                                "--batchsize 5000")
-          system(ncbi_command, wait = TRUE)
+        success <- download_ncbi(
+          crabs_path      = crabs_path,
+          taxa_vector     = taxa_vector,
+          final_query_str = final_query_str,
+          ncbi_email      = ncbi_email
+        )
+        if (!success) {
+          showNotification("NCBI download failed", type = "error")
+          return(NULL)
         }
-        system("cat intermediate/ncbi_*.fasta > intermediate/merged_ncbi_output.fasta")
-        system("awk '{if (/>.*/) {print} else { sub(/^N*/, \"\"); sub(/N*$/, \"\"); print}}' intermediate/merged_ncbi_output.fasta > intermediate/merged_ncbi_output_cleaned.fasta")
-        system(paste(crabs_path, "--import --import-format ncbi --input intermediate/merged_ncbi_output_cleaned.fasta --output intermediate/merged_ncbi_output.tax.tsv --acc2tax data/nucl_gb.accession2taxid --nodes data/nodes.dmp --names data/names.dmp --ranks 'superkingdom;phylum;class;order;family;genus;species'"))
       }
   
 #####################
 ####BOLD DOWNLOAD####
 #####################
       
-      genera_vector <- unique(sub(" .*", "", taxa_vector)) #To minimise the chances of the API crashing 
-      
       if ("bold" %in% selected_sources) {
-        all_exec_output <- character()
-        
-        for (i in seq_along(genera_vector)) {
-          
-          taxon <- genera_vector[i]
-          
-          print(paste("Downloading genus:", taxon))
-          
-          bold_command <- paste(
-            crabs_path,
-            "--download-bold", #uses BOLD v5
-            "--taxon", shQuote(taxon),
-            "--output", shQuote(paste0("intermediate/bold_", taxon, ".tsv")),
-            "--marker", shQuote(input$bold_marker)
-          )
-          
-          bold_exec_output <- tryCatch({
-            system(bold_command, intern = TRUE, wait = TRUE)
-          }, error = function(e) {
-            paste("Error executing command for genus", taxon, ":", e$message)
-          })
-          
-          all_exec_output <- c(all_exec_output, bold_exec_output)
-          
-          if (i < length(genera_vector)) {
-            Sys.sleep(runif(1, min = 3, max = 8))  # Wait 2 seconds between requests
-          }
+        success <- download_bold(
+          crabs_path  = crabs_path,
+          taxa_vector = taxa_vector,
+          bold_marker = input$bold_marker
+        )
+        if (!success) {
+          showNotification("BOLD download failed", type = "error")
+          return(NULL)
         }
-        
-        # Merge and clean the downloaded BOLD sequences
-        all_bold_files <- list.files(path = "intermediate", pattern = "^bold_.*\\.tsv$", full.names = TRUE)
-        if (length(all_bold_files) > 0) {
-          # Read all files and combine, filling missing columns with NA
-          combined_data <- lapply(all_bold_files, function(file) {
-            df <- read.table(file, header = TRUE, sep = "\t", quote = "", 
-                             fill = TRUE, stringsAsFactors = FALSE, 
-                             colClasses = "character")  
-            return(df)
-          }) %>%
-            bind_rows()
-        #filter for species/genera in taxa_vector after having to download using the genera  
-          combined_data <- combined_data[
-            combined_data$genus %in% taxa_vector | 
-              combined_data$species %in% taxa_vector
-            ,]
-          
-          write.table(combined_data, "intermediate/bold_combined.tsv", sep = "\t", quote = FALSE, row.names = FALSE)
-        } 
-        
-        # Run CRABS import
-        system(paste(crabs_path,
-                     "--import --import-format BOLDV5",
-                     "--input intermediate/bold_combined.tsv",
-                     "--output intermediate/merged_bold_output.tax.tsv",
-                     "--acc2tax data/nucl_gb.accession2taxid",
-                     "--nodes data/nodes.dmp",
-                     "--names data/names.dmp",
-                     "--ranks 'superkingdom;phylum;class;order;family;genus;species'"))
       }
       
 ###################### 
@@ -3083,53 +3037,11 @@ observeEvent(input$generate_run, {
 ######################
       
       if ("silva" %in% selected_sources) {
-        
-        print("Downloading SILVA database...")
-        
-        system(paste(
-          crabs_path,
-          "--download-silva",
-          "--output intermediate/silva_138.2_subset.fasta",
-          "--gene", shQuote(input$silva_marker),
-          "--db-type subset",
-          "--db-version 138.2"
-        ))
-        
-        # Check if download succeeded
-        if (file.exists("intermediate/silva_138.2_subset.fasta")) {
-          
-          print("Importing SILVA data...")
-          
-          # Run CRABS import
-          system(paste(crabs_path,
-                       "--import --import-format silva",
-                       "--input intermediate/silva_138.2_subset.fasta",
-                       "--output intermediate/silva_output.tax.tsv",
-                       "--acc2tax data/nucl_gb.accession2taxid",
-                       "--nodes data/nodes.dmp",
-                       "--names data/names.dmp",
-                       "--ranks 'superkingdom;phylum;class;order;family;genus;species'"))
-          
-          # Filter the imported SILVA file for species in the list
-          if (file.exists("intermediate/silva_output.tax.tsv")) {
-            silva_data <- read.table("intermediate/silva_output.tax.tsv", header = TRUE, sep = "\t", 
-                                     quote = "", comment.char = "",
-                                     fill = TRUE, stringsAsFactors = FALSE, 
-                                     colClasses = "character")
-            
-            silva_data <- silva_data[
-              silva_data[, 9] %in% taxa_vector | 
-                silva_data[, 10] %in% taxa_vector,
-            ]
-            
-            write.table(silva_data, "intermediate/merged_silva_output.tax.tsv", sep = "\t", 
-                        quote = FALSE, row.names = FALSE, col.names = FALSE)
-            
-            print(paste("Filtered SILVA data:", nrow(silva_data), "sequences"))
-          }
-        } else {
-          print("SILVA download failed")
-        }
+        download_silva(
+          crabs_path   = crabs_path,
+          silva_marker = input$silva_marker,
+          taxa_vector  = taxa_vector
+        )
       }
       
 ######################### 
@@ -3137,130 +3049,34 @@ observeEvent(input$generate_run, {
 #########################
       
       if (!is.null(input$custom_fasta)) {
-        custom_fasta_path <- input$custom_fasta$datapath
-        
-        system(paste(crabs_path,
-                     "--import --import-format BOLDV3",
-                     "--input", shQuote(custom_fasta_path),
-                     "--output intermediate/custom_fasta_output.tax.tsv",
-                     "--acc2tax data/nucl_gb.accession2taxid",
-                     "--nodes data/nodes.dmp",
-                     "--names data/names.dmp",
-                     "--ranks 'superkingdom;phylum;class;order;family;genus;species'"))
+        success <- import_custom_fasta(
+          crabs_path        = crabs_path,
+          custom_fasta_path = input$custom_fasta$datapath
+        )
+        if (!success) {
+          showNotification("Custom FASTA import failed", type = "error")
+          return(NULL)
+        }
       }
       
-###################     
-####MERGE FILES####
-###################  
+#####################      
+###CREATE DATABASE###
+#####################
       
-      combined_output <- "intermediate/merged_combined_output.tax.tsv"
+success <- create_database(
+        crabs_path      = crabs_path,
+        selected_sources = selected_sources,
+        custom_fasta    = input$custom_fasta,
+        forward_primer  = input$forward_primer,
+        reverse_primer  = input$reverse_primer,
+        db_name         = db_name()
+      )
       
-      # Build list of files to merge based on selected sources
-      files_to_merge <- character()
-      
-      if ("ncbi" %in% selected_sources && file.exists("intermediate/merged_ncbi_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "intermediate/merged_ncbi_output.tax.tsv")
+      if (!success) {
+        showNotification("Database creation failed", type = "error")
+        return(NULL)
       }
       
-      if ("bold" %in% selected_sources && file.exists("intermediate/merged_bold_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "intermediate/merged_bold_output.tax.tsv")
-      }
-      
-      if ("midori" %in% selected_sources && file.exists("intermediate/merged_midori_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "intermediate/merged_midori_output.tax.tsv")
-      }
-      
-      if ("silva" %in% selected_sources && file.exists("intermediate/merged_silva_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "intermediate/merged_silva_output.tax.tsv")
-      }
-      
-      if (!is.null(input$custom_fasta) && file.exists("intermediate/custom_fasta_output.tax.tsv")) {
-        files_to_merge <- c(files_to_merge, "intermediate/custom_fasta_output.tax.tsv")
-      }
-      
-      if (length(files_to_merge) > 1) {
-        # Multiple files - merge them
-        system(paste(crabs_path,
-                     "--merge --input", shQuote(paste(files_to_merge, collapse = ";")),
-                     "--uniq --output", combined_output))
-      } else if (length(files_to_merge) == 1) {
-        # Single file - just use it directly
-        combined_output <- files_to_merge[1]
-      } else {
-        stop("No data sources selected or available")
-      }
-      
-###########################      
-####DATABASE PROCESSING####      
-###########################
-      
-      #Dereplicate sequences and clean output
-      system(paste(crabs_path, "--dereplicate --input", combined_output, "--output intermediate/merged_combined_output.filtered.tsv --dereplication-method \'unique_species\'"))
-      
-      system("awk -F'\t' 'NF>=1 && length($NF)>0' intermediate/merged_combined_output.filtered.tsv > intermediate/merged_combined_output.filtered.cleaned.tsv")
-      system("awk -F'\t' 'NF>=1 && length($NF)>0 {gsub(/ /,\"-\",$1); print}' OFS='\t' intermediate/merged_combined_output.filtered.cleaned.tsv > intermediate/merged_combined_output.filtered.cleaned.final.tsv")
-      
-      # Insilico PCR using selected primers
-      system(paste(crabs_path, "--in-silico-pcr --input intermediate/merged_combined_output.filtered.cleaned.final.tsv --output intermediate/insilico_relaxed.txt --forward", shQuote(input$forward_primer), "--reverse", shQuote(input$reverse_primer), "--relaxed"))
-      
-      #Pairwise global alignment to find any sequences with no primers but correct region
-      system(paste(crabs_path, "--pairwise-global-alignment --input intermediate/merged_combined_output.filtered.cleaned.final.tsv --amplicons intermediate/insilico_relaxed.txt --output intermediate/insilico_aligned.txt --forward", shQuote(input$forward_primer), "--reverse", shQuote(input$reverse_primer), "--size-select 10000 --percent-identity 0.95 --coverage 95"))
-      
-      #Further dereplication after insilico PCR
-      system(paste(crabs_path, "--dereplicate --input intermediate/insilico_aligned.txt --output intermediate/merged_combined_output.tax.cleaned.tsv --dereplication-method \'unique_species\'"))
-      
-      #Filtering of results - possibly requires minimum length to be changed. 
-      system(paste(crabs_path, "--filter", 
-                   "--input intermediate/merged_combined_output.tax.cleaned.tsv", 
-                   "--output intermediate/merged_combined_output.tax.cleaned.final.tsv", 
-                   "--minimum-length 150",
-                   "--maximum-n 5",
-                   "--environmental",
-                   "--no-species-id",
-                   "--rank-na 2"))
-      
-      #Sort out issues with Sequence ID names to enable BLAST database to be constructed. 
-      dt <- fread("intermediate/merged_combined_output.tax.cleaned.final.tsv", sep = "\t")
-      
-      dt[[1]] <- gsub(":", "-", dt[[1]])
-      
-      # Case-insensitive key
-      key <- tolower(dt[[1]])
-      
-      # Count duplicates by lowercase key
-      dup_index <- ave(seq_along(key), key, FUN = function(x) seq_along(x) - 1)
-      
-      # Build new names
-      dt[[1]] <- ifelse(dup_index == 0,
-                        dt[[1]],
-                        paste0(dt[[1]], "_", dup_index))
-      
-      fwrite(dt,
-             "intermediate/merged_combined_output.tax.cleaned.final.tsv",
-             sep = "\t",
-             quote = FALSE,
-             col.names = FALSE)
-      
-      #Export into fasta format
-      system(paste(crabs_path, "--export --input intermediate/merged_combined_output.tax.cleaned.final.tsv --output intermediate/combined.db.fasta --export-format rdp"))
-      system(paste("awk '/^>/ {print $1; next}1'", shQuote("intermediate/combined.db.fasta"), ">", shQuote(file.path("databases", paste0(db_name(), ".fasta")))))
-      
-      #Create taxonomy file
-      system("awk -F\"\\t\" '{ print $1,$3 }' intermediate/merged_combined_output.tax.cleaned.final.tsv > intermediate/taxonomy.dictionary.combined.v1.txt")
-      system(paste("grep -v 'seqID'", shQuote("intermediate/taxonomy.dictionary.combined.v1.txt"), ">", shQuote(file.path("databases", paste0(db_name(), ".txt")))))
-      
-      #Make BLAST database
-      system(paste(
-        "makeblastdb",
-        "-in", shQuote(file.path("databases", paste0(db_name(), ".fasta"))),
-        "-parse_seqids",
-        "-blastdb_version", "5",
-        "-dbtype", "nucl",
-        "-taxid_map", shQuote(file.path("databases", paste0(db_name(), ".txt"))),
-        "-title", shQuote(file.path("databases", paste0(db_name(), ".blast.db"))),
-        "-out", shQuote(file.path("databases", paste0(db_name(), ".blast.db")))
-      ))
-
 
 #################################     
 ####DELETE INTERMEDIATE FILES####
