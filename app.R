@@ -36,6 +36,12 @@ source("functions/database_comparison.R")
 source("functions/database_results.R")
 source("functions/wkt_polygon.R")
 source("functions/longtermdata.R")
+source("functions/updatetaxonomy.R")
+source("functions/blastprep.R")
+source("functions/runblast.R")
+source("functions/blastresults.R")
+source("functions/updatelongterm.R")
+source("functions/blastvisualisations.R")
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -47,7 +53,6 @@ if (docker_mode) {
   options(shiny.launch.browser = TRUE)
 }
 
- 
  ui <- fluidPage(
    tags$style(HTML("
   html, body {
@@ -437,7 +442,31 @@ tags$style(HTML("
              )
              ) 
     ),
-    
+    tabPanel(
+      "Controls", value = "control_res",
+      fluidPage(
+        h3("Species of Interest in the Controls"),
+        uiOutput("download_controls_table_ui"),
+        p("Presence of SoI in the Controls"),
+        uiOutput("species_cards_controls")
+      )
+    ),
+    tabPanel(
+      "Replication", value = "replication_res",
+      fluidPage(
+        h3("Detection Heatmap (Replicate-Based Confidence)"),
+        sliderInput("abundance_threshold", 
+                    "Minimum Abundance Threshold:",
+                    min = 0, max = 500, value = 0, step = 10),
+        uiOutput("download_replication_table_ui"),
+        tags$ul(
+          tags$li(style = "color: #d4edda;", "Green: Species of Interest observed in > 75% of replicates (requires at least 3 replicates)"),
+          tags$li(style = "color: #FAC589;", "Orange: Species of Interest observed in between 50 and 75% of replicates or there are 2 or fewer replicates"),
+          tags$li(style = "color: #deabaf;", "Red: Species of Interest found in less than 50% of repliactes")
+        ),
+        uiOutput("heatmap_ui")
+      )
+    ),
     tabPanel("Visualisations",
              
              # --- TOP ROW WITH LEFT + RIGHT ELEMENTS ---
@@ -985,6 +1014,12 @@ tags$style(HTML("
 
 server <- function(input, output, session) {
   
+  observeEvent(input$btn1, { updateTabsetPanel(session, "tabs", selected = "blast") })
+  observeEvent(input$btn2, { updateTabsetPanel(session, "tabs", selected = "soiresults") })
+  observeEvent(input$btn3, { updateTabsetPanel(session, "tabs", selected = "historic") })
+  observeEvent(input$btn4, { updateTabsetPanel(session, "tabs", selected = "construction") })
+  observeEvent(input$btn5, { updateTabsetPanel(session, "tabs", selected = "help") })
+  
   Sys.setenv(PYTHONWARNINGS="ignore::UserWarning")
 
   crabs_path <- Sys.which("crabs")
@@ -1002,73 +1037,26 @@ server <- function(input, output, session) {
   queries <- reactiveVal(list())
   show_results <- reactiveVal(FALSE)
   polygon_wkt <- reactiveVal(NULL)
+  blast_results <- reactiveVal("")
+  historic_data <- reactiveVal(data.frame())
   
-  check_taxonomy_files <- function(data_dir, max_age_days = 180) {
-    files <- c(
-      "nodes.dmp",
-      "names.dmp",
-      "nucl_gb.accession2taxid"
-    )
-    
-    paths <- file.path(data_dir, files)
-    
-    exists <- file.exists(paths)
-    
-    if (!all(exists)) {
-      return(list(
-        status = "missing",
-        missing = files[!exists]
-      ))
-    }
-    
-    file_ages <- sapply(paths, function(f) {
-      as.numeric(Sys.time() - file.info(f)$mtime, units = "days")
-    })
-    
-    if (any(file_ages > max_age_days)) {
-      return(list(
-        status = "old",
-        ages = round(file_ages, 1)
-      ))
-    }
-    
-    list(status = "ok")
-  }
-  
-  
-  download_taxonomy_async <- function(data_dir, crabs_path = "crabs") {
-    future({
-      cmd <- paste(
-        shQuote(crabs_path),
-        "--download-taxonomy",
-        "--output",
-        shQuote(data_dir)
-      )
-      
-      system(cmd, intern = TRUE, wait = TRUE)
-    })
-  }
-  
-  
+####Check and update taxonomy files####
+  #Check if the taxonomy files exist and how old they are
   observeEvent(TRUE, {
     data_dir <- "data"
-    
-    res <- check_taxonomy_files(data_dir)
-    
+    res      <- check_taxonomy_files(data_dir)
+    #See if files exist
     if (res$status == "missing") {
-      
       showModal(modalDialog(
-        title = "Taxonomy files missing",
+        title  = "Taxonomy files missing",
         paste("Missing files:", paste(res$missing, collapse = ", ")),
         "They will now be downloaded automatically.",
         footer = NULL
       ))
-      
       download_taxonomy_async(data_dir)
       removeModal()
-      
+     #See if they are old than 6 months or not 
     } else if (res$status == "old") {
-      
       showModal(modalDialog(
         title = "Taxonomy files are old",
         paste(
@@ -1084,15 +1072,13 @@ server <- function(input, output, session) {
     }
   }, once = TRUE)
   
-  
+  #If files don't exist or too old then download new versions
   observeEvent(input$update_taxonomy, {
-    
     data_dir <- "data"
-    
     removeModal()
     
     showModal(modalDialog(
-      title = "Updating taxonomy",
+      title  = "Updating taxonomy",
       tagList(
         "Downloading taxonomy files. This may take several minutes.",
         br(),
@@ -1102,239 +1088,30 @@ server <- function(input, output, session) {
     ))
     
     download_taxonomy_async(data_dir) %...>% {
-      
       removeModal()
-      
-      showNotification(
-        "Taxonomy update complete",
-        type = "message",
-        duration = 5
-      )
-      
+      showNotification("Taxonomy update complete", type = "message", duration = 5)
     } %...!% {
-      
       removeModal()
-      
-      showNotification(
-        paste("Taxonomy update failed:", .),
-        type = "error",
-        duration = 10
-      )
+      showNotification(paste("Taxonomy update failed:", .), type = "error", duration = 10)
     }
   })
-
-
-
   
-  # Load data outside reactive context
-  historic_data <- reactive({
-    
-    # Default empty data
-    df <- data.frame()
-    
-    tryCatch({
-      if (file.exists("data/historic.csv")) {
-        df <- read.csv("data/historic.csv", header = TRUE, stringsAsFactors = FALSE)
-        
-        # --- Preprocess ---
-        if ("Year" %in% colnames(df)) df$Year <- as.numeric(df$Year)
-        if ("Presence" %in% colnames(df)) df$Presence <- trimws(df$Presence)
-        if ("Methodology" %in% colnames(df)) df$Methodology <- trimws(df$Methodology)
-      }
-    }, error = function(e) {
-      print(paste("Error loading historic data:", e$message))
-    })
-    
-    df
-  })
-  
-  observe({
-    runjs('$(".nav-link").css({
-    "color": "#a3a3a3",
-    "background-color": "transparent",
-    "border": "none"
-  })')
-  })
-  
-  observeEvent(input$btn1, { updateTabsetPanel(session, "tabs", selected = "blast") })
-  observeEvent(input$btn2, { updateTabsetPanel(session, "tabs", selected = "soiresults") })
-  observeEvent(input$btn3, { updateTabsetPanel(session, "tabs", selected = "historic") })
-  observeEvent(input$btn4, { updateTabsetPanel(session, "tabs", selected = "construction") })
-  observeEvent(input$btn5, { updateTabsetPanel(session, "tabs", selected = "help") })
   
 ########################################  
-####GET SYNONYMS FROM GBIF FOR BLAST####  
+####Running BLAST####  
 ########################################
+####Blast prep####
   
-  get_synonyms_gbif <- function(species_name) {
-    
-    # Query GBIF backbone
-    bb <- tryCatch({
-      name_backbone(name = species_name)
-    }, error = function(e) NULL)
-    
-    # No match → map species to itself
-    if (is.null(bb) || is.null(bb$speciesKey)) {
-      return(data.frame(
-        SOI = species_name,
-        canonicalName = species_name,
-        stringsAsFactors = FALSE
-      ))
-    }
-    
-    key <- bb$speciesKey
-    
-    # Get synonyms
-    syns <- tryCatch({
-      name_usage(key = key, data = "synonyms")$data
-    }, error = function(e) NULL)
-    
-    if (is.null(syns) || nrow(syns) == 0) {
-      return(data.frame(
-        SOI = species_name,
-        canonicalName = species_name,
-        stringsAsFactors = FALSE
-      ))
-    }
-    
-    # Build canonical list (self + synonyms)
-    canonical_list <- unique(c(
-      species_name,
-      syns$species,
-      syns$canonicalName
-    ))
-    canonical_list <- canonical_list[!is.na(canonical_list) & canonical_list != ""]
-    
-    species_df <- data.frame(
-      SOI = rep(species_name, length(canonical_list)),
-      canonicalName = canonical_list,
-      stringsAsFactors = FALSE
-    )
-    
-    # Clean names to Genus + species
-    species_df <- species_df %>%
-      tidyr::separate(canonicalName, c("Genus", "Species", "Other"), sep = " ", fill = "right") %>%
-      tidyr::unite("canonicalName", Genus, Species, Other, sep = " ", na.rm = TRUE) %>%
-      dplyr::select(SOI, canonicalName) %>%
-      dplyr::distinct()
-    
-    return(species_df)
-  }
-  
-  ######################
-  ####FIND DATABASES####
-  ######################
-  
+  #get available databases
   observeEvent(input$tabs, {
-    # Only run when "Run BLAST" tab is selected
     if (input$tabs == "blast") {
-      db_folder <- "databases/"
-      
-      # List .nin files
-      db_files <- list.files(db_folder, pattern = "\\.nin$", full.names = FALSE)
-      
-      # Remove .nin extension
-      db_names <- gsub("\\.nin$", "", db_files)
-      
-      # Update selectInput
+      db_names <- get_available_databases("databases/")
       updateSelectInput(session, "db_choice", choices = db_names)
     }
-  })
-  
-################# 
-####RUN BLAST####
-#################
-  
-  blast_results <- reactiveVal("") # To store BLAST results
-  
-  observeEvent(input$run_blast, {
-    req(input$query_file, input$db_choice) # Ensure inputs are provided
-    
-    # Show processing dialog
-    showModal(modalDialog(
-      title = "Processing",
-      "Running BLAST... Please wait.",
-      footer = NULL
-    ))
-    
-    # Paths for input and output
-    query_path <- input$query_file$datapath
-    db_path <- file.path("databases", input$db_choice)
-    output_file <- tempfile(fileext = ".txt")
-    
-    shiny::validate(
-      need(file.exists(query_path), "Query file is missing or invalid."),
-      need(file.exists(paste0(db_path, ".nin")), 
-           "Database files are missing or the path is incorrect.")
-    )
-    
-    
-    # BLAST command
- blast_command <- paste(
-  "blastn",
-  "-query", query_path,
-  "-db", db_path,
-  "-out", output_file,
-  "-max_target_seqs 5",
-  "-num_threads 10",
-  "-qcov_hsp_perc 80",
-  "-outfmt", shQuote("6 qseqid sseqid staxids pident length mismatch gapopen qstart qend sstart send evalue bitscore")
-)
- 
-############################
-####CREATE BLAST RESULTS####
-############################
- 
-tryCatch({
-  system(blast_command, intern = TRUE)
-  
-  # Read results with fread and clean quotes
-  blast_results.df <- fread(output_file, 
-                            header = FALSE, 
-                            sep = "\t",
-                            quote = "")
-  
-  # Set column names
-  colnames(blast_results.df) <- c("qseqid", "sseqid", "staxids", 
-                                  "pident", "length", "mismatch", "gapopen", 
-                                  "qstart", "qend", "sstart", "send", 
-                                  "evalue", "bitscore")
-  
-  names_dmp <- read.table("data/names.dmp", sep="|", quote="", fill=TRUE, stringsAsFactors=FALSE)
-  names_dmp <- names_dmp[names_dmp$V4 == "\tscientific name\t", ]
-  names_dmp$V1 <- as.numeric(trimws(names_dmp$V1))
-  names_dmp$V2 <- trimws(names_dmp$V2)
-  
-  blast_results.df <- merge(blast_results.df, names_dmp[, c(1,2)], 
-                   by.x="staxids", by.y="V1", all.x=TRUE)
-  names(blast_results.df)[ncol(blast_results.df)] <- "sscinames"
-  
-  
-  # Clean all quotes from character columns
-  char_cols <- names(blast_results.df)[sapply(blast_results.df, is.character)]
-  
-  blast_results.df[, (char_cols) := lapply(.SD, function(x) {
-    gsub('"', '', x, fixed = TRUE)
-  }), .SDcols = char_cols]
-  
-  # Store results and display in UI
-  blast_results(blast_results.df)
-  
-  updateTabsetPanel(session, "tabs", selected = "soiresults")
-  
-}, error = function(e) {
-  blast_results(paste("An error occurred while running BLAST:", e$message))
-}, finally = {
-  # Hide processing dialog
-  removeModal()
-})
-  })
+  })  
   
   species_list_path <- reactive({
-
-    # -------------------
-    # BLAST pipeline
-    # -------------------
+    
     if (!is.null(input$db_choice)) {
       db <- input$db_choice
       
@@ -1356,8 +1133,6 @@ tryCatch({
     return(NULL)
   })
   
-    
-  
   output$slider_length_value <- renderText({
     paste(input$length_filter[1], "to", input$length_filter[2])
   })
@@ -1375,781 +1150,362 @@ tryCatch({
     input$pident_filter
   }) %>% debounce(1000)
   
+####RUN BLAST####
+
+  observeEvent(input$run_blast, {
+    req(input$query_file, input$db_choice)
+    
+    showModal(modalDialog(
+      title  = "Processing",
+      "Running BLAST... Please wait.",
+      footer = NULL
+    ))
+    
+    query_path  <- input$query_file$datapath
+    db_path     <- file.path("databases", input$db_choice)
+    output_file <- tempfile(fileext = ".txt")
+    
+    shiny::validate(
+      need(file.exists(query_path),              "Query file is missing or invalid."),
+      need(file.exists(paste0(db_path, ".nin")), "Database files are missing or the path is incorrect.")
+    )
+    
+    blast_command <- build_blast_command(query_path, db_path, output_file)
+    
+    tryCatch({
+      blast_results.df <- run_blast(blast_command, output_file)
+      blast_results.df <- merge_blast_taxonomy(blast_results.df)
+      
+      blast_results(blast_results.df)
+      updateTabsetPanel(session, "tabs", selected = "soiresults")
+      
+    }, error = function(e) {
+      blast_results(paste("An error occurred while running BLAST:", e$message))
+    }, finally = {
+      removeModal()
+    })
+  })
+
   
-  # Display results
+####Blast results####
+  
   filtered_results <- reactive({
     req(blast_results())
-    
-    length_range <- debounced_length_filter()
-    pident_range <- debounced_pident_filter()
-    # Filter based on percent identity and length
-    filtered <- blast_results()
-    
-    na_pident_rows <- filtered[is.na(filtered$pident), ]
-    if(nrow(na_pident_rows) > 0) {
-      print("Rows with NA in pident:")
-      print(na_pident_rows)
-    }
-    
-    # Filter by percent identity
-    filtered <- filtered[!is.na(filtered$pident) & 
-    filtered$pident >= pident_range[1] & 
-    filtered$pident <= pident_range[2], ]
-  
-    
-    filtered <- filtered[!is.na(filtered$length) & 
-                           filtered$length >= length_range[1] & 
-                           filtered$length <= length_range[2], ]
-    
-    print(filtered)
-  
-    species_path <- species_list_path() 
-    
-    
-    SOI_list.df <- fread(species_path, header = TRUE, sep = "\t")
-    
-    print(SOI_list.df)
-    
-    SOI_list.df <- SOI_list.df %>% distinct(SOI, canonicalName)
-    
-    # Join BLAST results with SOI synonyms
-    filtered <- filtered %>%
-      left_join(
-        SOI_list.df,
-        by = c("sscinames" = "canonicalName")
-      ) %>%
-      filter(sscinames != "N/A") %>%
-      mutate(SOI_flag = !is.na(SOI))
-    
-   print(filtered)
-    
-    return(filtered)
-    
+    filter_blast_results(
+      blast_results = blast_results(),
+      pident_range  = debounced_pident_filter(),
+      length_range  = debounced_length_filter(),
+      species_path  = species_list_path()
+    )
   })
   
   filtered_results2 <- reactive({
     req(filtered_results())
-    
-    filtered2 <- filtered_results()
-  
-  top_bitscore_per_asv <- filtered2 %>%
-    group_by(qseqid) %>%
-    summarise(bitscore = max(bitscore, na.rm = TRUE))
-  
-  # Merge to get counts of occurrences of top bitscore per ASV
-  merged_df <- filtered2 %>%
-    inner_join(top_bitscore_per_asv, by = c("qseqid", "bitscore")) %>% 
-    select(qseqid, sscinames, SOI_flag) %>% 
-    distinct()
-  
-  # Count occurrences of top bitscore per ASV
-  asv_top_bitscore_counts <- merged_df %>%
-    group_by(qseqid) %>%
-    summarise(Top_bitscore_Count = n())
-  
-  # Merge back to indicate multiple instances
-  result_df <- merged_df %>%
-    inner_join(asv_top_bitscore_counts, by = "qseqid") %>%
-    mutate(Multiple_Instances = Top_bitscore_Count > 1) %>%
-    select(-Top_bitscore_Count)
-  
- 
-})
-  
-  
+    get_top_bitscore_results(filtered_results())
+  })
   
   output$soi_species_boxes_likely <- renderUI({
-  
-    
     req(filtered_results2())
-    soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% filter(Multiple_Instances == FALSE)
     
-    if (nrow(soi_results) > 0) {
-      showModal(modalDialog(
-        title = "Processing",
-        "Loading species boxes (likely)... Please wait.",
-        footer = NULL
-      ))
-    } else {
-      return(NULL) # Stop processing if no data
-    }
+    soi_results <- filtered_results2() %>%
+      filter(SOI_flag == TRUE, Multiple_Instances == FALSE)
     
-    species_list <- unique(soi_results$sscinames)
+    if (nrow(soi_results) == 0) return(NULL)
     
-    box_list <- lapply(species_list, function(species) {
-      asvs <- soi_results %>% filter(sscinames == species) %>% pull(qseqid) %>% unique()
-      
-      multiple_instances <- soi_results %>% filter(sscinames == species) %>% pull(Multiple_Instances) %>% dplyr::first()
-      
-      # Determine the color based on Multiple_Instances value
-      asv_color <- ifelse(multiple_instances, "#98C7B1", "#716fa8")
-      
-      taxonKey <- tryCatch({
-        key <- name_backbone(species)$usageKey
-        if (!is.null(key)) key else NA
-      }, error = function(e) NA)
-      
-      # Construct the hyperlink if taxonKey is found
-      print(paste("Species:", species, "| TaxonKey:", taxonKey))
-      
-      # Construct the hyperlink if taxonKey is found
-      species_link <- tags$a(
-        href = "#",  # Prevents default action
-        onclick = sprintf("window.open('%s', '_blank')", paste0("https://www.gbif.org/species/", taxonKey)),
-        style = "font-size: 18px; font-weight: bold; color: #b0dce9; text-decoration: underline; cursor: pointer;",
-        species
-      )
-      
-      
-      asv_content <- paste0("<span style='color:", asv_color, ";'> ASVs: ", paste(asvs, collapse = ", "), "</span>")
-      
-      box_content <- paste(species_link, "<br>", asv_content)
-      
-      div(
-        style = "border: 1px solid #2171B5; padding: 10px; margin: 5px; background-color: #254550; width: 300px; display: inline-block; vertical-align: top;",
-        HTML(box_content) 
-      )
+    showModal(modalDialog(
+      title  = "Processing",
+      "Loading species boxes (likely)... Please wait.",
+      footer = NULL
+    ))
+    
+    box_list <- lapply(unique(soi_results$sscinames), function(species) {
+      build_species_box(species, soi_results)
     })
     
     removeModal()
-    
     do.call(tagList, box_list)
   })
-  
-  
-  
   
   output$soi_species_boxes_potential <- renderUI({
-    
-    
     req(filtered_results2())
-    soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% filter(Multiple_Instances == TRUE)
     
-    if (nrow(soi_results) > 0) {
-      showModal(modalDialog(
-        title = "Processing",
-        "Loading species boxes (Putative)... Please wait.",
-        footer = NULL
-      ))
-    } else {
-      return(NULL) # Stop processing if no data
-    }
+    soi_results <- filtered_results2() %>%
+      filter(SOI_flag == TRUE, Multiple_Instances == TRUE)
     
-    species_list <- unique(soi_results$sscinames)
+    if (nrow(soi_results) == 0) return(NULL)
     
-    box_list <- lapply(species_list, function(species) {
-      asvs <- soi_results %>% filter(sscinames == species) %>% pull(qseqid) %>% unique()
-      
-      multiple_instances <- soi_results %>% filter(sscinames == species) %>% pull(Multiple_Instances) %>% first()
-      
-      # Determine the color based on Multiple_Instances value
-      asv_color <- ifelse(multiple_instances, "#98C7B1", "#716fa8")
-      
-      taxonKey <- tryCatch({
-        key <- name_backbone(species)$usageKey
-        if (!is.null(key)) key else NA
-      }, error = function(e) NA)
-      
-      # Construct the hyperlink if taxonKey is found
-      print(paste("Species:", species, "| TaxonKey:", taxonKey))
-      
-      # Construct the hyperlink if taxonKey is found
-      species_link <- tags$a(
-        href = "#",  # Prevents default action
-        onclick = sprintf("window.open('%s', '_blank')", paste0("https://www.gbif.org/species/", taxonKey)),
-        style = "font-size: 18px; font-weight: bold; color: #b0dce9; text-decoration: underline; cursor: pointer;",
-        species
-      )
-      
-      
-      asv_content <- paste0("<span style='color:", asv_color, ";'> ASVs: ", paste(asvs, collapse = ", "), "</span>")
-      
-      box_content <- paste(species_link, "<br>", asv_content)
-      
-      div(
-        style = "border: 1px solid #2171B5; padding: 10px; margin: 5px; background-color: #254550; width: 300px; display: inline-block; vertical-align: top;",
-        HTML(box_content) 
-      )
+    showModal(modalDialog(
+      title  = "Processing",
+      "Loading species boxes (Putative)... Please wait.",
+      footer = NULL
+    ))
+    
+    box_list <- lapply(unique(soi_results$sscinames), function(species) {
+      build_species_box(species, soi_results)
     })
     
     removeModal()
-    
     do.call(tagList, box_list)
   })
   
-################################  
-####VISUALISATION RESULT TAB####
-################################
-  
+####Blast visualisation####
+
   asv_table <- reactive({
     req(input$table_file)
     fread(input$table_file$datapath, header = TRUE)
   })
   
-  
-  
-  # Read coordinates file
   coordinates <- reactive({
     req(input$coord_file)
     fread(input$coord_file$datapath, header = TRUE, sep = "\t")
   })
   
-  
   output$debug_info <- renderText({
     req(asv_table(), filtered_results2())
-    
-    soi_results <- filtered_results2() %>%
-      filter(SOI_flag == TRUE) %>%
-      select(qseqid, sscinames)
-    
-    ASV_list <- unique(soi_results$qseqid)
-    
-    paste("Species of Interest ASVs found:", length(ASV_list),
+    soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% select(qseqid, sscinames)
+    paste("Species of Interest ASVs found:", length(unique(soi_results$qseqid)),
           "\nTotal samples:", ncol(asv_table()) - 1)
   })
   
-  #Download heatmap presence/absence data
   output$download_heatmap_data <- downloadHandler(
-    filename = function() {
-      paste0("SoI_heatmap_data_", Sys.Date(), ".csv")
-    },
-    content = function(file) {
+    filename = function() paste0("SoI_heatmap_data_", Sys.Date(), ".csv"),
+    content  = function(file) {
       req(asv_table(), filtered_results2())
-      
-      # Get SOI results
-      soi_results <- filtered_results2() %>% 
-        filter(SOI_flag == TRUE) %>% 
-        select(qseqid, sscinames)
-      
-      # Validate we have data
-      shiny::validate(
-        need(nrow(soi_results) > 0, "No Species of Interest found in filtered results")
-      )
-      
-      ASV_list <- unique(soi_results$qseqid)
-      
-      # Filter ASV table
-      filtered_asv_table_heatmap <- asv_table() %>%
-        filter(ASV %in% ASV_list)
-      
-      # Prepare data for heatmap (same as plot)
-      filtered_asv_table_heatmap_pa <- filtered_asv_table_heatmap %>%
-        pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
-        left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-        group_by(sscinames, SampleID) %>%
-        summarise(Abundance = sum(Abundance), .groups = "drop") %>%
-        mutate(PresenceAbsence = ifelse(Abundance > 0, "Present", "Absent"))
-      
-      # Optionally pivot to wide format for better readability
-      heatmap_wide <- filtered_asv_table_heatmap_pa %>%
-        select(sscinames, SampleID, PresenceAbsence) %>%
-        pivot_wider(names_from = SampleID, values_from = PresenceAbsence, values_fill = "Absent")
-      
-      # Write to file
+      shiny::validate(need(nrow(filtered_results2() %>% filter(SOI_flag == TRUE)) > 0,
+                           "No Species of Interest found in filtered results"))
+      heatmap_wide <- prepare_heatmap_download(asv_table(), filtered_results2())
       write.csv(heatmap_wide, file, row.names = FALSE)
     }
   )
   
-  
-  # Server - SOI Heatmap
   output$SOI_heatmap <- renderPlot({
-    req(asv_table())
-    req(filtered_results2())
-    
-    # Get SOI results
-    soi_results <- filtered_results2() %>% 
-      filter(SOI_flag == TRUE) %>% 
-      select(qseqid, sscinames)
-    
-    # Validate we have data
-    shiny::validate(
-      need(nrow(soi_results) > 0, "No species of interest found in filtered results")
-    )
-    
-    ASV_list <- unique(soi_results$qseqid)
-    
-    # Filter ASV table
-    summarise_by <- as.character(input$soi_grouping)[1]
-    
-    filtered_asv_table_heatmap <- asv_table() %>% 
-      filter(ASV %in% ASV_list) # Validate we have matching ASVs validate( need(nrow(filtered_asv_table_heatmap) > 0, "No matching ASVs found in ASV table") )
-    
-    df_long <- filtered_asv_table_heatmap %>%
-      pivot_longer(
-        -ASV,
-        names_to = "SampleID",
-        values_to = "Abundance"
-      ) %>%
-      left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-      left_join(coordinates(), by = "SampleID")   # ensures Site + Region available
-    
-    # now group by the selected column and summarise
-    heatmap_df <- df_long %>%
-      group_by(sscinames, .data[[summarise_by]]) %>%   # dynamic grouping
-      summarise(Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop") %>%
-      mutate(PresenceAbsence = as.integer(Abundance > 0))
-    
-    # Create heatmap
-    ggplot(heatmap_df,
-           aes(
-             x = .data[[summarise_by]],
-             y = sscinames,
-             fill = factor(PresenceAbsence)
-           )
-    ) +
-      geom_tile(color = "grey80", linewidth = 0.5) +
-      scale_fill_manual(values = c("0" = "#d2d2d2", "1" = "#716fa8"), 
-                        name = "Presence",
-                        labels = c("Absent", "Present")) +
-      theme_bw() +
-      theme(
-        axis.text.x = element_text(size = 14, angle = 90, vjust = 0.5, hjust = 1, colour = "white"),
-        axis.text.y = element_text(size = 14, face = "italic", colour = "white"),
-        axis.title = element_text(size = 18, colour = "white"),
-        panel.background = element_rect(fill = "transparent", color = NA),
-        plot.background = element_rect(fill = "transparent", color = NA),
-        legend.background = element_rect(fill = "transparent", color = NA),
-        legend.text = element_text(size = 16, colour = "white"),
-        legend.title = element_text(size = 16, colour = "white"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.border = element_blank()
-      ) +
-      labs(x = "", y = "Species of Interest")
-    
+    req(asv_table(), filtered_results2())
+    soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% select(qseqid, sscinames)
+    shiny::validate(need(nrow(soi_results) > 0, "No species of interest found in filtered results"))
+    summarise_by  <- as.character(input$soi_grouping)[1]
+    heatmap_df    <- prepare_heatmap_data(asv_table(), filtered_results2(), coordinates(), summarise_by)
+    plot_soi_heatmap(heatmap_df, summarise_by)
   }, bg = "transparent")
   
   output$SOI_heatmap_ui <- renderUI({
     req(asv_table(), filtered_results2())
-    
-    soi_results <- filtered_results2() %>%
-      filter(SOI_flag == TRUE) %>% 
-      select(qseqid, sscinames)
-    
-    ASV_list <- unique(soi_results$qseqid)
-    
-
-    # Calculate dimensions
+    soi_results  <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% select(qseqid, sscinames)
     summarise_by <- input$soi_grouping
-    
-    # Need metadata for grouping
-    df <- asv_table() %>% 
-      filter(ASV %in% ASV_list) %>%
-      pivot_longer(
-        -ASV,
-        names_to = "SampleID",
-        values_to = "Abundance"
-      ) %>% 
-      left_join(soi_results,  by = c("ASV" = "qseqid")) %>%
-      left_join(coordinates(), by = "SampleID")   # <-- Site + Region now exist!
-    
-    # Count unique grouping levels (SampleID, Site, or Region)
-    group_count <- df %>% pull(!!sym(summarise_by)) %>% unique() %>% length()
-    
-    # Count SOI species
-    species_count <- length(unique(soi_results$sscinames))
-    
-    # Dynamic heatmap size
-    width_px  <- as.numeric(min(max(group_count * 120, 400), 10000))
-    height_px <- as.numeric(min(max(species_count * 50, 400), 10000))
-    
-    
-    plotOutput("SOI_heatmap", 
-               width = paste0(width_px, "px"), 
-               height = paste0(height_px, "px"))
+    dims         <- calculate_heatmap_dimensions(asv_table(), soi_results, coordinates(), summarise_by)
+    plotOutput("SOI_heatmap",
+               width  = paste0(dims$width,  "px"),
+               height = paste0(dims$height, "px"))
   })
-  
-#Tally map
   
   soi_summary <- reactive({
     req(asv_table(), filtered_results2(), coordinates())
-    
-    soi_results <- filtered_results2() %>%
-      filter(SOI_flag == TRUE) %>%
-      select(qseqid, sscinames)
-    
-    ASV_list <- unique(soi_results$qseqid)
-    
-    # All ASV x sample rows
-    df <- asv_table() %>%
-      filter(ASV %in% ASV_list) %>%
-      pivot_longer(
-        -ASV,
-        names_to = "SampleID",
-        values_to = "Abundance"
-      ) %>%
-      left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-      left_join(coordinates(), by = "SampleID")  # <-- full coordinates here
-    
-    df
+    prepare_soi_summary(asv_table(), filtered_results2(), coordinates())
   })
   
   output$soi_map <- renderLeaflet({
     df <- soi_summary()
     req(nrow(df) > 0)
     
-    # -----------------------------
-    # CALCULATE CENTER AND BOUNDS USING RAW DATA
-    # -----------------------------
-    df_coords <- df %>% filter(!is.na(Latitude) & !is.na(Longitude))
+    df_coords  <- df %>% filter(!is.na(Latitude) & !is.na(Longitude))
     center_lat <- mean(df_coords$Latitude)
     center_lon <- mean(df_coords$Longitude)
-    
-    lon_range <- diff(range(df_coords$Longitude, na.rm = TRUE))
-    lat_range <- diff(range(df_coords$Latitude, na.rm = TRUE))
-    spread <- max(lon_range, lat_range)
-    
-    zoom_level <- case_when(
-      spread > 30 ~ 3,   # very wide spread (continental scale)
-      spread > 10 ~ 4,   # country scale
-      spread > 2  ~ 5,   # regional scale
-      TRUE        ~ 6    # zoom in if very tight cluster
+    zoom_level <- calculate_zoom_level(
+      diff(range(df_coords$Longitude, na.rm = TRUE)),
+      diff(range(df_coords$Latitude,  na.rm = TRUE))
     )
     
-    # -----------------------------
-    # Prepare summarised data for circle sizes
-    # -----------------------------
     summarise_by <- input$soi_grouping
-   
-     df_summary <- df %>%
-      filter(Abundance > 0) %>%
-      distinct(!!sym(summarise_by), ASV, Latitude, Longitude) %>% 
-      group_by(across(all_of(summarise_by))) %>%
-      summarise(
-        n = n(),
-        Latitude = mean(Latitude, na.rm = TRUE),
-        Longitude = mean(Longitude, na.rm = TRUE),
-        .groups = "drop"
-      ) %>%
-      mutate(
-        radius = scales::rescale(n, to = c(5, 30))
-      )
+    df_summary   <- prepare_map_summary(df, summarise_by)
     
-     df_summary <- df_summary %>%
-       mutate(
-         popup_text = paste0(
-           summarise_by, ": ", .data[[summarise_by]],
-           "<br># ASVs of species of interest: ", n
-         )
-       )
-     
-    # -----------------------------
-    # Build the leaflet map
-    # -----------------------------
     leaflet(df_summary) %>%
       addTiles() %>%
       addCircleMarkers(
-        lng = ~Longitude,
-        lat = ~Latitude,
-        radius = ~radius,
-        color = "#716fa8",
+        lng         = ~Longitude,
+        lat         = ~Latitude,
+        radius      = ~radius,
+        color       = "#716fa8",
         fillOpacity = 0.7,
-        stroke = FALSE,
-        labelOptions = labelOptions(direction = "auto"),
-        popup = ~popup_text
+        stroke      = FALSE,
+        popup       = ~popup_text
       ) %>%
       setView(lng = center_lon, lat = center_lat, zoom = zoom_level)
   })
   
-  
-  
-  
-  
   observe({
-    req(filtered_results2())  # Ensure data is available
-    
-    # Extract unique species names
-    soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE)
+    req(filtered_results2())
+    soi_results  <- filtered_results2() %>% filter(SOI_flag == TRUE)
     species_list <- unique(soi_results$sscinames)
-    
-    # Update selectInput choices dynamically
     updateSelectInput(session, "species_choice", choices = species_list, selected = NULL)
   })
   
   selected_asvs <- reactive({
     req(input$species_choice, filtered_results2(), asv_table())
+    get_asvs_for_species(filtered_results2(), asv_table(), input$species_choice)
+  })
+  
+  global_max_proportion <- reactive({
+    req(asv_table(), filtered_results2(), coordinates())
     
-    soi_results <- filtered_results2()
-    
-    asvs_for_species <- soi_results %>%
-      filter(sscinames == input$species_choice) %>%
-      pull(qseqid) %>%
+    all_soi_asvs <- filtered_results2() %>% 
+      filter(SOI_flag == TRUE) %>% 
+      pull(qseqid) %>% 
       unique()
     
-    filtered_asv_table <- asv_table() %>%
-      select(c("ASV", everything())) %>%
-      filter(ASV %in% asvs_for_species)
-    
-    return(filtered_asv_table)
-  })
-  
-  # Merge ASV presence with coordinates
-  merged_data <- reactive({
-    req(selected_asvs(), coordinates())
-    
-    # Sum ASV abundance per sample
-    asv_presence <- selected_asvs() %>%
+    total_community <- asv_table() %>%
       pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
       group_by(SampleID) %>%
-      summarise(SOI_Present = sum(Abundance) > 0,
-                Abundance = sum(Abundance))  # If sum > 0, SOI is present
+      summarise(Total_Community = sum(Abundance))
     
-    
-    
-    merged <- coordinates() %>%
-      left_join(asv_presence, by = c("SampleID" = "SampleID")) %>%
-      group_by(Site, Latitude,	Longitude)  %>%
-      summarise(SOI_Present = sum(Abundance) > 0,
-                Abundance = sum(Abundance)) %>%
-      mutate(SOI_Present = ifelse(is.na(SOI_Present), FALSE, SOI_Present))  # Default to FALSE if no data
-    
-  
-    return(merged)
+    asv_table() %>%
+      filter(ASV %in% all_soi_asvs) %>%
+      pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
+      group_by(SampleID) %>%
+      summarise(Abundance = sum(Abundance)) %>%
+      left_join(total_community, by = "SampleID") %>%
+      mutate(Proportion = ifelse(Total_Community > 0, Abundance / Total_Community, 0)) %>%
+      filter(Proportion > 0) %>%
+      pull(Proportion) %>%
+      max()
   })
   
-  # Render the map
+  global_min_proportion <- reactive({
+    req(asv_table(), filtered_results2(), coordinates())
+    
+    all_soi_asvs <- filtered_results2() %>% 
+      filter(SOI_flag == TRUE) %>% 
+      pull(qseqid) %>% 
+      unique()
+    
+    total_community <- asv_table() %>%
+      pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
+      group_by(SampleID) %>%
+      summarise(Total_Community = sum(Abundance))
+    
+    asv_table() %>%
+      filter(ASV %in% all_soi_asvs) %>%
+      pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
+      group_by(SampleID) %>%
+      summarise(Abundance = sum(Abundance)) %>%
+      left_join(total_community, by = "SampleID") %>%
+      mutate(Proportion = ifelse(Total_Community > 0, Abundance / Total_Community, 0)) %>%
+      filter(Proportion > 0) %>%
+      pull(Proportion) %>%
+      min()
+  })
+  
+  merged_data <- reactive({
+    req(selected_asvs(), coordinates(), asv_table())
+    prepare_merged_data(
+      selected_asvs  = selected_asvs(),
+      coordinates    = coordinates(),
+      asv_table      = asv_table(),
+      max_proportion = global_max_proportion(),
+      min_proportion = global_min_proportion()
+    )
+  })
+  
+  
   output$map <- renderLeaflet({
-    merged <- merged_data()
+    merged     <- merged_data()
     req(merged)
-    
     center_lon <- mean(merged$Longitude, na.rm = TRUE)
-    center_lat <- mean(merged$Latitude, na.rm = TRUE)
-    
-    # Calculate spread (approximate degrees covered)
-    lon_range <- diff(range(merged$Longitude, na.rm = TRUE))
-    lat_range <- diff(range(merged$Latitude, na.rm = TRUE))
-    spread <- max(lon_range, lat_range)
-    
-    zoom_level <- case_when(
-      spread > 30 ~ 3,   # very wide spread (continental scale)
-      spread > 10 ~ 4,   # country scale
-      spread > 2  ~ 5,   # regional scale
-      TRUE        ~ 6    # zoom in if very tight cluster
+    center_lat <- mean(merged$Latitude,  na.rm = TRUE)
+    zoom_level <- calculate_zoom_level(
+      diff(range(merged$Longitude, na.rm = TRUE)),
+      diff(range(merged$Latitude,  na.rm = TRUE))
     )
     
     leaflet(data = merged) %>%
       addTiles() %>%
       addCircleMarkers(
         ~Longitude, ~Latitude,
-        color = ~ifelse(SOI_Present, "#716fa8", "#a3a3a3"),
-        fillColor = ~ifelse(SOI_Present, "#716fa8", "#a3a3a3"),  # Fill color
+        color       = ~ifelse(SOI_Present, "#716fa8", "#a3a3a3"),
+        fillColor   = ~ifelse(SOI_Present, "#716fa8", "#a3a3a3"),
         fillOpacity = ~ifelse(SOI_Present, 1, 0),
-        radius = 6,
-        weight = 1.5,
-        popup = ~paste("Name:", Site, "<br>Read Counts:", Abundance)
+        radius      = ~radius_scaled,
+        weight      = 1.5,
+        popup       = ~paste("Name:", Site, "<br>Read Counts:", Abundance, "<br>Proportion:", Proportion)
       ) %>%
       setView(lng = center_lon, lat = center_lat, zoom = zoom_level)
-  })
+  }) 
 
-  
-################################  
-####ADD NEW DATA TO EXISTING####
-################################  
-  
-  # UI for selecting likely species
+####Add new data to long term dataset####
+
   output$select_likely_species_ui <- renderUI({
     req(filtered_results2())
-    
-    soi_results <- filtered_results2() %>% 
-      filter(SOI_flag == TRUE, Multiple_Instances == FALSE)
-    
+    soi_results  <- filtered_results2() %>% filter(SOI_flag == TRUE, Multiple_Instances == FALSE)
     species_list <- unique(soi_results$sscinames)
-    
-    if (length(species_list) == 0) {
-      return(p("No likely Species of Interest found", style = "color: white;"))
-    }
-    
-    checkboxGroupInput("selected_likely_species",
-                       label = NULL,
-                       choices = sort(species_list),
-                       selected = NULL)
+    if (length(species_list) == 0) return(p("No likely Species of Interest found", style = "color: white;"))
+    checkboxGroupInput("selected_likely_species", label = NULL,
+                       choices = sort(species_list), selected = NULL)
   })
   
-  # UI for selecting Putative species
   output$select_potential_species_ui <- renderUI({
     req(filtered_results2())
-    
-    soi_results <- filtered_results2() %>% 
-      filter(SOI_flag == TRUE, Multiple_Instances == TRUE)
-    
+    soi_results  <- filtered_results2() %>% filter(SOI_flag == TRUE, Multiple_Instances == TRUE)
     species_list <- unique(soi_results$sscinames)
-    
-    if (length(species_list) == 0) {
-      return(p("No putative Species of Interest found", style = "color: white;"))
-    }
-    
-    checkboxGroupInput("selected_potential_species",
-                       label = NULL,
-                       choices = sort(species_list),
-                       selected = NULL)
+    if (length(species_list) == 0) return(p("No putative Species of Interest found", style = "color: white;"))
+    checkboxGroupInput("selected_potential_species", label = NULL,
+                       choices = sort(species_list), selected = NULL)
   })
   
-  # Reactive to store the editable table with metadata
   pa_table_with_metadata <- reactiveVal(NULL)
   
-  # Generate editable table with metadata in one step
   observeEvent(input$generate_editable_table, {
     req(filtered_results2(), asv_table(), coordinates())
     
-    # Combine selected species from both categories
     selected_species <- c(input$selected_likely_species, input$selected_potential_species)
+    shiny::validate(need(length(selected_species) > 0, "Please select at least one species"))
     
-    shiny::validate(
-      need(length(selected_species) > 0, "Please select at least one species")
+    pa_table <- generate_pa_table(
+      filtered_results2 = filtered_results2(),
+      asv_table         = asv_table(),
+      coordinates       = coordinates(),
+      selected_species  = selected_species
     )
+    shiny::validate(need(!is.null(pa_table) && nrow(pa_table) > 0, "No ASVs found for selected species"))
     
-    # Get ASVs for selected species
-    soi_results <- filtered_results2() %>%
-      filter(SOI_flag == TRUE, sscinames %in% selected_species) %>%
-      select(qseqid, sscinames, Multiple_Instances)
-    
-    shiny::validate(
-      need(nrow(soi_results) > 0, "No ASVs found for selected species")
-    )
-    
-    # Get unique ASVs
-    asv_list <- unique(soi_results$qseqid)
-    
-    # Filter ASV table
-    filtered_asv <- asv_table() %>%
-      filter(ASV %in% asv_list)
-    
-    # Create presence/absence table
-    pa_table <- filtered_asv %>%
-      pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
-      left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-      group_by(sscinames, SampleID) %>%
-      summarise(
-        Total_Abundance = sum(Abundance),
-        .groups = "drop"
-      )
-    
-    print(pa_table)
-    
-    # Add coordinates
-    pa_table_coord <- left_join(pa_table, coordinates(), by = "SampleID") %>% 
-      group_by(SampleID, Site, Region, Latitude, Longitude, sscinames) %>%
-      summarise(
-        Total_Abundance = sum(Total_Abundance),
-        Presence = ifelse(sum(Total_Abundance) > 0, "Present", "Absent"),
-        .groups = "drop"
-      ) %>%
-      select(Species = sscinames, SampleID, Site, Region, Presence, Latitude, Longitude) %>%
-      arrange(Species, Site)
-    
-    # Add metadata columns
     if (input$metadata_source == "manual") {
-      pa_table_coord$Year <- input$year_fill
-      pa_table_coord$Gene <- input$gene_fill
-      pa_table_coord$Methodology <- input$methodology_fill
+      pa_table <- add_manual_metadata(pa_table,
+                                      year        = input$year_fill,
+                                      gene        = input$gene_fill,
+                                      methodology = input$methodology_fill)
     } else if (input$metadata_source == "upload") {
       req(input$metadata_file)
-      
-      uploaded_metadata <- read.csv(input$metadata_file$datapath, stringsAsFactors = FALSE)
-      
-      
-      shiny::validate(
-        need("SampleID" %in% colnames(uploaded_metadata),
-             "Uploaded metadata must include a 'SampleID' column for joining.")
-      )
-      
-      # Join metadata by SampleID
-      pa_table_coord <- left_join(pa_table_coord, uploaded_metadata, by = "SampleID")
-    } 
-      
-    
-    # Reorder columns
-    pa_table_coord <- pa_table_coord %>%
-      select(Species, SampleID, Site, Region, Presence, Gene, Latitude, Longitude, Year, Methodology)
-    
-    pa_table_with_metadata(pa_table_coord)
-  })
-  
-  # Render editable table with white text
-  output$editable_pa_table <- renderDT({
-    req(pa_table_with_metadata())
-    
-    datatable(
-      pa_table_with_metadata(),
-      editable = list(target = "cell", disable = list(columns = c(0, 1, 2, 3, 4, 5))),
-      options = list(
-        pageLength = 25,
-        scrollX = TRUE,
-        scrollY = "400px",
-        dom = 'Bfrtip',
-        initComplete = JS(
-          "function(settings, json) {",
-          "$(this.api().table().container()).css({'color': 'white'});",
-          "}"
-        )
-      ),
-      class = 'cell-border stripe',
-      rownames = FALSE
-    ) %>%
-      formatStyle(
-        columns = 1:ncol(pa_table_with_metadata()),
-        color = 'white',
-        backgroundColor = 'transparent'
-      )
-  })
-  
-
-  # Handle cell edits
-  observeEvent(input$editable_pa_table_cell_edit, {
-    info <- input$editable_pa_table_cell_edit
-    
-    print(paste("Edit detected - Row:", info$row, "Col:", info$col, "Value:", info$value))  # DEBUG
-    
-    updated_data <- pa_table_with_metadata()
-    
-    # DT sends row as 1-indexed (row 1 = first row in data frame)
-    # DT sends col as 0-indexed (col 0 = first column)
-    row_index <- info$row
-    col_index <- info$col + 1
-    
-    print(paste("Updating row:", row_index, "col:", col_index))  # DEBUG
-    
-    # Get the column name
-    col_name <- colnames(updated_data)[col_index]
-    
-    print(paste("Column name:", col_name))  # DEBUG
-    
-    # Convert value to appropriate type based on column
-    new_value <- if (col_name %in% c("Latitude", "Longitude", "Total_Abundance")) {
-      as.numeric(info$value)
-    } else {
-      as.character(info$value)
+      pa_table <- add_uploaded_metadata(pa_table, input$metadata_file$datapath)
     }
     
-    print(paste("New value:", new_value, "Type:", class(new_value)))  # DEBUG
-    
-    # Update the cell
-    updated_data[row_index, col_index] <- new_value
-    
-    print(paste("Updated cell. New table preview:"))  # DEBUG
-    print(head(updated_data))  # DEBUG
-    
+    pa_table <- reorder_pa_columns(pa_table)
+    pa_table_with_metadata(pa_table)
+  })
+  
+  output$editable_pa_table <- renderDT({
+    req(pa_table_with_metadata())
+    render_pa_datatable(pa_table_with_metadata())
+  })
+  
+  observeEvent(input$editable_pa_table_cell_edit, {
+    info         <- input$editable_pa_table_cell_edit
+    updated_data <- update_pa_cell(pa_table_with_metadata(),
+                                   row_index = info$row,
+                                   col_index = info$col + 1,
+                                   value     = info$value)
     pa_table_with_metadata(updated_data)
   })
   
-  # Download P/A table
   output$download_pa_table <- downloadHandler(
-    filename = function() {
-      paste0("SoI_presence_absence_", Sys.Date(), ".csv")
-    },
-    content = function(file) {
+    filename = function() paste0("SoI_presence_absence_", Sys.Date(), ".csv"),
+    content  = function(file) {
       req(pa_table_with_metadata())
       write.csv(pa_table_with_metadata(), file, row.names = FALSE)
     }
   )
   
-  
   observeEvent(input$add_to_historic, {
     req(pa_table_with_metadata())
-    
     showModal(modalDialog(
-      title = "Confirm Addition",
-      "Are you sure you want to add this data to the historic dataset? This will update the existing historic.csv file.",
+      title  = "Confirm Addition",
+      "Are you sure you want to add this data to the historic dataset?",
       footer = tagList(
         modalButton("Cancel"),
         actionButton("confirm_add_historic", "Confirm", class = "btn-success")
@@ -2157,73 +1513,19 @@ tryCatch({
     ))
   })
   
-  
-  # Confirm adding to historic data - USE SAME DATA AS DOWNLOAD
   observeEvent(input$confirm_add_historic, {
     req(pa_table_with_metadata())
     
     tryCatch({
-      # Use the exact same data that would be downloaded
-      new_data <- pa_table_with_metadata()
+      updated_historic <- add_to_historic(pa_table_with_metadata(), historic_data())
       
-      print("=== Data being added to historic ===")
-      print(new_data)
-      
-      new_data$DateAdded <- as.character(Sys.Date())
-      
-      # Ensure Year is character for consistency
-      new_data$Year <- as.character(new_data$Year)
-      new_data$Methodology <- as.character(new_data$Methodology)
-      
-      # Get existing historic data
-      current_historic <- historic_data()
-      
-      # Combine datasets
-      if (nrow(current_historic) > 0) {
-        all_cols <- union(colnames(current_historic), colnames(new_data))
-        
-        # Ensure Year is character in existing data too
-        if ("Year" %in% colnames(current_historic)) {
-          current_historic$Year <- as.character(current_historic$Year)
-        }
-        if ("Methodology" %in% colnames(current_historic)) {
-          current_historic$Methodology <- as.character(current_historic$Methodology)
-        }
-        if ("DateAdded" %in% colnames(current_historic)) {
-          current_historic$DateAdded <- as.character(current_historic$DateAdded)
-        }
-        
-        # Add missing columns with NA
-        for (col in all_cols) {
-          if (!col %in% colnames(current_historic)) {
-            current_historic[[col]] <- NA_character_
-          }
-          if (!col %in% colnames(new_data)) {
-            new_data[[col]] <- NA_character_
-          }
-        }
-        
-        updated_historic <- bind_rows(current_historic, new_data)
-      } else {
-        updated_historic <- new_data
-      }
-      
-      # Remove duplicates 
-      updated_historic <- updated_historic %>%
-        arrange(desc(DateAdded)) %>%
-        distinct(Species, SampleID, Site, Region, Year, Methodology, .keep_all = TRUE)  # Removed Year from distinct
-      
-      if (!dir.exists("data")) {
-        dir.create("data")
-      }
-      
+      if (!dir.exists("data")) dir.create("data")
       write.csv(updated_historic, "data/historic.csv", row.names = FALSE)
       historic_data(updated_historic)
       
       removeModal()
-      
       showModal(modalDialog(
-        title = "Success",
+        title  = "Success",
         paste("Successfully added records to historic data."),
         footer = modalButton("OK")
       ))
@@ -2231,16 +1533,55 @@ tryCatch({
     }, error = function(e) {
       removeModal()
       showModal(modalDialog(
-        title = "Error",
+        title  = "Error",
         paste("Failed to update historic data:", e$message),
         footer = modalButton("OK")
       ))
     })
   })
   
+####Blast Output Files####
+  
+  db_name <- reactive({
+    req(input$species_file, input$amplicon_of_interest)
+    
+    filename <- tools::file_path_sans_ext(basename(input$species_file$name))
+    gene <- gsub("[^A-Za-z0-9]", "", input$amplicon_of_interest)  
+    
+    paste0(filename, "_", gene)
+  })
+  
+  output$download_full_result <- downloadHandler(
+    filename = function() {
+      paste0("blast_full_results_", Sys.Date(), ".txt")
+    },
+    content = function(file) {
+      write.table(blast_results(), file, row.names = FALSE, col.names = TRUE, sep = "\t")
+    }
+  )
+  
+  output$download_filtered_result <- downloadHandler(
+    filename = function() {
+      paste0("blast_filtered_results_", Sys.Date(), ".txt")
+    },
+    content = function(file) {
+      write.table(filtered_results(), file, row.names = FALSE, col.names = TRUE, sep = "\t")
+    }
+  )
+  
 #####################
 ####Long Term DATA####  
 #####################  
+  
+historic_data <- reactiveVal(load_historic_data())
+  
+  observe({
+    runjs('$(".nav-link").css({
+    "color": "#a3a3a3",
+    "background-color": "transparent",
+    "border": "none"
+  })')
+  })
   
   output$historic_species_select <- renderUI({
     build_historic_ui_selects(historic_data())$species
@@ -2307,7 +1648,9 @@ tryCatch({
         setView(
           lng  = mean(filtered_data_map$Longitude, na.rm = TRUE),
           lat  = mean(filtered_data_map$Latitude,  na.rm = TRUE),
-          zoom = calculate_zoom_level(filtered_data_map)
+          zoom = calculate_zoom_level(
+            lon_range = diff(range(filtered_data_map$Longitude, na.rm = TRUE)),
+            lat_range = diff(range(filtered_data_map$Latitude,  na.rm = TRUE)))
         )
     }
   })
@@ -2362,36 +1705,6 @@ tryCatch({
     
     plot_historic_bar(filtered_data, input$species)
   }, bg = "transparent")
-  
-  
-####Blast Output Files####
-
-  db_name <- reactive({
-    req(input$species_file, input$amplicon_of_interest)
-    
-    filename <- tools::file_path_sans_ext(basename(input$species_file$name))
-    gene <- gsub("[^A-Za-z0-9]", "", input$amplicon_of_interest)  
-    
-    paste0(filename, "_", gene)
-  })
-  
-  output$download_full_result <- downloadHandler(
-    filename = function() {
-      paste0("blast_full_results_", Sys.Date(), ".txt")
-    },
-    content = function(file) {
-      write.table(blast_results(), file, row.names = FALSE, col.names = TRUE, sep = "\t")
-    }
-  )
-  
-  output$download_filtered_result <- downloadHandler(
-    filename = function() {
-      paste0("blast_filtered_results_", Sys.Date(), ".txt")
-    },
-    content = function(file) {
-      write.table(filtered_results(), file, row.names = FALSE, col.names = TRUE, sep = "\t")
-    }
-  )
   
 ###########################  
 ###DATABASE CONSTRUCTION###
