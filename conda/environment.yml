@@ -7,7 +7,7 @@ dependencies:
   # Core
   - python=3.11
   - pip
-  - r-base
+  - r-base=4.3
 
   # R packages
   - r-shiny
@@ -28,6 +28,7 @@ dependencies:
   - r-promises
   - r-reticulate
   - r-digest
+  - r-geojsonsf
 
   # Bio tools
   - blast
