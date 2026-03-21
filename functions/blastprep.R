@@ -1,9 +1,10 @@
 get_synonyms_gbif <- function(species_name) {
-  
+  #find gbif taxonomy backbone
   bb <- tryCatch({
     name_backbone(name = species_name)
   }, error = function(e) NULL)
   
+  #if fail return original spcies
   if (is.null(bb) || is.null(bb$speciesKey)) {
     return(data.frame(
       SOI           = species_name,
@@ -11,12 +12,14 @@ get_synonyms_gbif <- function(species_name) {
       stringsAsFactors = FALSE
     ))
   }
-  
+  #extract spcies key from gbif
   key  <- bb$speciesKey
+  #get synonyms
   syns <- tryCatch({
     name_usage(key = key, data = "synonyms")$data
   }, error = function(e) NULL)
   
+  #if no synonyms return original species
   if (is.null(syns) || nrow(syns) == 0) {
     return(data.frame(
       SOI           = species_name,
@@ -25,13 +28,16 @@ get_synonyms_gbif <- function(species_name) {
     ))
   }
   
+  #build list of species including synonyms
   canonical_list <- unique(c(
     species_name,
     syns$species,
     syns$canonicalName
   ))
+  #remove missing values
   canonical_list <- canonical_list[!is.na(canonical_list) & canonical_list != ""]
   
+  #build dataframe and standardise the names
   species_df <- data.frame(
     SOI           = rep(species_name, length(canonical_list)),
     canonicalName = canonical_list,
@@ -47,7 +53,7 @@ get_synonyms_gbif <- function(species_name) {
   return(species_df)
 }
 
-
+#identify and get the databases that are available for use
 get_available_databases <- function(db_folder = "databases/") {
   db_files <- list.files(db_folder, pattern = "\\.nin$", full.names = FALSE)
   gsub("\\.nin$", "", db_files)

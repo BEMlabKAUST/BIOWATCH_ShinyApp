@@ -7,10 +7,10 @@ filter_blast_results <- function(blast_results, pident_range, length_range, spec
                          filtered$pident >= pident_range[1] &
                          filtered$pident <= pident_range[2], ]
   
-  # Filter by length
-  filtered <- filtered[!is.na(filtered$length) &
-                         filtered$length >= length_range[1] &
-                         filtered$length <= length_range[2], ]
+  # Filter by coverage
+  filtered <- filtered[!is.na(filtered$qcovhsp) &
+                         filtered$qcovhsp >= length_range[1] &
+                         filtered$qcovhsp <= length_range[2], ]
   
   # Load and join SOI list
   SOI_list.df <- fread(species_path, header = TRUE, sep = "\t") %>%
@@ -27,19 +27,23 @@ filter_blast_results <- function(blast_results, pident_range, length_range, spec
 
 get_top_bitscore_results <- function(filtered) {
   
+  #find max bitscore per ASV
   top_bitscore_per_asv <- filtered %>%
     group_by(qseqid) %>%
     summarise(bitscore = max(bitscore, na.rm = TRUE))
   
+  #Retain results where the result matches the top bitscore for each ASV
   merged_df <- filtered %>%
     inner_join(top_bitscore_per_asv, by = c("qseqid", "bitscore")) %>%
-    select(qseqid, sscinames, SOI_flag) %>%
+    select(qseqid, sscinames, SOI_flag, pident) %>%
     distinct()
   
+  #Count how many hits have the max bitscore for each ASV
   asv_top_bitscore_counts <- merged_df %>%
     group_by(qseqid) %>%
     summarise(Top_bitscore_Count = n())
   
+  #Add flag if there are multiple hits for the max bitscore.
   merged_df %>%
     inner_join(asv_top_bitscore_counts, by = "qseqid") %>%
     mutate(Multiple_Instances = Top_bitscore_Count > 1) %>%
@@ -49,15 +53,25 @@ get_top_bitscore_results <- function(filtered) {
 
 build_species_box <- function(species, soi_results) {
   
-  asvs               <- soi_results %>% filter(sscinames == species) %>% pull(qseqid) %>% unique()
-  multiple_instances <- soi_results %>% filter(sscinames == species) %>% pull(Multiple_Instances) %>% dplyr::first()
+  # Get ASVs and their pident values for this species
+  species_results    <- soi_results %>% filter(sscinames == species)
+  multiple_instances <- species_results %>% pull(Multiple_Instances) %>% dplyr::first()
   asv_color          <- ifelse(multiple_instances, "#98C7B1", "#716fa8")
   
+  # Build ASV labels with similarity percentage in brackets
+  asv_labels <- species_results %>%
+    select(qseqid, pident) %>%
+    distinct() %>%
+    mutate(label = paste0(qseqid, " (", round(pident, 1), "%)")) %>%
+    pull(label)
+  
+  # Look up GBIF taxonomic key for species page link
   taxonKey <- tryCatch({
     key <- name_backbone(species)$usageKey
     if (!is.null(key)) key else NA
   }, error = function(e) NA)
   
+  # Create clickable species name linking to GBIF
   species_link <- tags$a(
     href    = "#",
     onclick = sprintf("window.open('%s', '_blank')",
@@ -66,8 +80,10 @@ build_species_box <- function(species, soi_results) {
     species
   )
   
+  # Create ASV list with similarity percentages
   asv_content <- paste0("<span style='color:", asv_color, ";'> ASVs: ",
-                        paste(asvs, collapse = ", "), "</span>")
+                        paste(asv_labels, collapse = ", "), "</span>")
+  
   box_content <- paste(species_link, "<br>", asv_content)
   
   div(

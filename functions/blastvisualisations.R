@@ -1,97 +1,5 @@
-prepare_heatmap_data <- function(asv_table, filtered_results2, coordinates, summarise_by) {
-  
-  soi_results <- filtered_results2 %>%
-    filter(SOI_flag == TRUE) %>%
-    select(qseqid, sscinames)
-  
-  ASV_list <- unique(soi_results$qseqid)
-  
-  filtered_asv_table_heatmap <- asv_table %>% filter(ASV %in% ASV_list)
-  
-  df_long <- filtered_asv_table_heatmap %>%
-    pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
-    left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-    left_join(coordinates, by = "SampleID")
-  
-  df_long %>%
-    group_by(sscinames, .data[[summarise_by]]) %>%
-    summarise(Abundance = sum(Abundance, na.rm = TRUE), .groups = "drop") %>%
-    mutate(PresenceAbsence = as.integer(Abundance > 0))
-}
 
-
-plot_soi_heatmap <- function(heatmap_df, summarise_by) {
-  ggplot(heatmap_df,
-         aes(x = .data[[summarise_by]], y = sscinames,
-             fill = factor(PresenceAbsence))) +
-    geom_tile(color = "grey80", linewidth = 0.5) +
-    scale_fill_manual(
-      values = c("0" = "#d2d2d2", "1" = "#716fa8"),
-      name   = "Presence",
-      labels = c("Absent", "Present")
-    ) +
-    theme_bw() +
-    theme(
-      axis.text.x       = element_text(size = 14, angle = 90, vjust = 0.5, hjust = 1, colour = "white"),
-      axis.text.y       = element_text(size = 14, face = "italic", colour = "white"),
-      axis.title        = element_text(size = 18, colour = "white"),
-      panel.background  = element_rect(fill = "transparent", color = NA),
-      plot.background   = element_rect(fill = "transparent", color = NA),
-      legend.background = element_rect(fill = "transparent", color = NA),
-      legend.text       = element_text(size = 16, colour = "white"),
-      legend.title      = element_text(size = 16, colour = "white"),
-      panel.grid.major  = element_blank(),
-      panel.grid.minor  = element_blank(),
-      panel.border      = element_blank()
-    ) +
-    labs(x = "", y = "Species of Interest")
-}
-
-
-calculate_heatmap_dimensions <- function(asv_table, soi_results, coordinates, summarise_by) {
-  
-  ASV_list <- unique(soi_results$qseqid)
-  
-  df <- asv_table %>%
-    filter(ASV %in% ASV_list) %>%
-    pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
-    left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-    left_join(coordinates, by = "SampleID")
-  
-  group_count   <- df %>% pull(!!sym(summarise_by)) %>% unique() %>% length()
-  species_count <- length(unique(soi_results$sscinames))
-  
-  list(
-    width  = as.numeric(min(max(group_count   * 120, 400), 10000)),
-    height = as.numeric(min(max(species_count *  50, 400), 10000))
-  )
-}
-
-
-prepare_heatmap_download <- function(asv_table, filtered_results2) {
-  
-  soi_results <- filtered_results2 %>%
-    filter(SOI_flag == TRUE) %>%
-    select(qseqid, sscinames)
-  
-  ASV_list <- unique(soi_results$qseqid)
-  
-  filtered_asv_table_heatmap <- asv_table %>% filter(ASV %in% ASV_list)
-  
-  pa_long <- filtered_asv_table_heatmap %>%
-    pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
-    left_join(soi_results, by = c("ASV" = "qseqid")) %>%
-    group_by(sscinames, SampleID) %>%
-    summarise(Abundance = sum(Abundance), .groups = "drop") %>%
-    mutate(PresenceAbsence = ifelse(Abundance > 0, "Present", "Absent"))
-  
-  pa_long %>%
-    select(sscinames, SampleID, PresenceAbsence) %>%
-    pivot_wider(names_from = SampleID, values_from = PresenceAbsence,
-                values_fill = "Absent")
-}
-
-
+#calculate the zoom level for the map dependent on the range of lat and long.
 calculate_zoom_level <- function(lon_range, lat_range) {
   spread <- max(lon_range, lat_range)
   case_when(
@@ -102,12 +10,12 @@ calculate_zoom_level <- function(lon_range, lat_range) {
   )
 }
 
-
+#Subset to species of interest, remvoe controls and pivot longer
 prepare_soi_summary <- function(asv_table, filtered_results2, coordinates) {
   
   soi_results <- filtered_results2 %>%
     filter(SOI_flag == TRUE) %>%
-    select(qseqid, sscinames)
+    select(qseqid, sscinames)  
   
   ASV_list <- unique(soi_results$qseqid)
   
@@ -115,10 +23,13 @@ prepare_soi_summary <- function(asv_table, filtered_results2, coordinates) {
     filter(ASV %in% ASV_list) %>%
     pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
     left_join(soi_results,  by = c("ASV" = "qseqid")) %>%
-    left_join(coordinates,  by = "SampleID")
+    left_join(coordinates,  by = "SampleID") %>%
+    filter(Type != "Control")
 }
 
-
+#Aggregate speices of interest by either site or region depending on the selection by the user. 
+#Only include species that are present. 
+#COunt the number of ASVs detected and scale the bubble appropriately
 prepare_map_summary <- function(df, summarise_by) {
   
   df %>%
@@ -140,10 +51,10 @@ prepare_map_summary <- function(df, summarise_by) {
     )
 }
 
-
+#Build a summay table showing the species of interest abundance and coordinates for mapping.
 prepare_merged_data <- function(selected_asvs, coordinates, asv_table, 
                                 max_proportion = NULL, min_proportion = NULL) {
-  
+  #Tag if ASVs are present and sum the abundance across all asvs
   asv_presence <- selected_asvs %>%
     pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
     group_by(SampleID) %>%
@@ -151,15 +62,17 @@ prepare_merged_data <- function(selected_asvs, coordinates, asv_table,
       SOI_Present = sum(Abundance) > 0,
       Abundance   = sum(Abundance)
     )
-  
+  #Calculate the total community abundance across all ASVs
   total_community <- asv_table %>%
     pivot_longer(-ASV, names_to = "SampleID", values_to = "Abundance") %>%
     group_by(SampleID) %>%
     summarise(Total_Community = sum(Abundance))
   
+  #join the results together and summarise the data at the site level
   result <- coordinates %>%
     left_join(asv_presence,    by = "SampleID") %>%
     left_join(total_community, by = "SampleID") %>%
+    filter(Type != "Control") %>%
     group_by(Site, Latitude, Longitude) %>%
     summarise(
       SOI_Present     = sum(Abundance, na.rm = TRUE) > 0,
@@ -172,9 +85,10 @@ prepare_merged_data <- function(selected_asvs, coordinates, asv_table,
       Proportion  = ifelse(Total_Community > 0, Abundance / Total_Community, 0)
     )
   
+  #set the scaling max and min for the size of the bubbles
   scale_max <- if (!is.null(max_proportion)) max_proportion else max(result$Proportion[result$Proportion > 0])
   scale_min <- if (!is.null(min_proportion)) min_proportion else min(result$Proportion[result$Proportion > 0])
-  
+  #create the scaling column
   result %>%
     mutate(
       radius_scaled = ifelse(
@@ -185,7 +99,7 @@ prepare_merged_data <- function(selected_asvs, coordinates, asv_table,
     )
 }
 
-
+#Subset the ASV table to the ASVs for a selected species for mapping.
 get_asvs_for_species <- function(filtered_results2, asv_table, species_choice) {
   
   asvs_for_species <- filtered_results2 %>%

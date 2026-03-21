@@ -42,6 +42,9 @@ source("functions/runblast.R")
 source("functions/blastresults.R")
 source("functions/updatelongterm.R")
 source("functions/blastvisualisations.R")
+source("functions/detection_controls.R")
+source("functions/detection_replication.R")
+source("functions/species_differentiation.R")
 
 options(shiny.maxRequestSize = 500 * 1024^2)
 
@@ -294,67 +297,71 @@ tags$style(HTML("
     ),
     
     tabPanel("Run BLAST", value = "blast",
-             fluidPage(  # Wrap in fluidPage to ensure layout consistency
+             fluidPage(
                div(
-                 style = "display: flex; justify-content: space-between; gap: 20px; min-height: 400px;",  # Arrange two sections in a row
+                 style = "display: flex; justify-content: space-between; gap: 20px; min-height: 400px;",
                  
                  # Left Section
                  div(
-                   style = "flex: 1; margin-top: 50px; margin-left: 100px;",  # Shifts left and down
-                   
-                   # Styled File Input
+                   style = "flex: 1; margin-top: 50px; margin-left: 100px;",
                    div(
                      style = "color: white; font-size: 20px; font-weight: bold; margin-bottom: 5px;",
-                     "Upload Query File (FASTA)"  # Custom-styled label
+                     "Upload Query File (FASTA)"
                    ),
-                   div(style = "margin-bottom: 75px;",
-                   fileInput("query_file", NULL, accept = c(".fasta"))  # Remove default label
+                   div(style = "margin-bottom: 110px;",
+                       fileInput("query_file", NULL, accept = c(".fasta"))
                    ),
-                   # Select Database
                    div(style = "color: white; font-size: 20px; font-weight: bold; margin-bottom: 5px;",
                        "Select Database"
-                   ), 
+                   ),
                    selectInput("db_choice", NULL, choices = c("Loading..." = "")),
-                   
                    div(
                      style = "flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 70px;",
                      img(src = "BEM_logo2.png", height = "140px", style = "border-radius: 10px;")
                    )
-                  
                  ),
                  
+      
+                 # Centre Section — KAUST logo top, Max Target Seqs nudged down
                  div(
-                   style = "flex: 1; display: flex; align-items: center; justify-content: center; margin-top: 0px;",
-                   img(src = "KAUST_logo_transparent.png", height = "180px", style = "border-radius: 10px;")
+                   style = "flex: 1; display: flex; flex-direction: column; align-items: center; margin-top: 50px;",
+                   img(src = "KAUST_logo_transparent.png", height = "180px", style = "border-radius: 10px;"),
+                   div(
+                     style = "width: 100%; margin-top: 15px; margin-left: 300px;",
+                     div(style = "color: white; font-size: 20px; font-weight: bold; margin-bottom: 5px;",
+                         "Max Target Sequences"
+                     ),
+                     numericInput("max_target_seqs", NULL, value = 10, min = 1, max = 100, step = 1)
+                   )
                  ),
                  
                  # Right Section
                  div(
-                   style = "flex: 1; margin-top: 50px; margin-left: 95px;",  # Allows equal width distribution
-                   div(style = "color: white; font-size: 20px; margin-bottom: 75px;",
-                   fileInput("table_file", "Upload ASV Table (Optional)", accept = c(".txt", ".csv"))
+                   style = "flex: 1; margin-top: 50px; margin-left: 95px;",
+                   div(style = "color: white; font-size: 20px; margin-bottom: 110px;",
+                       fileInput("table_file", "Upload ASV Table (Optional)", accept = c(".txt", ".csv"))
                    ),
-                   div(style = "color: white; font-size: 20px; white-space: nowrap; ",
-                   fileInput("coord_file", "Upload Coordinate File (Optional)", accept = c(".txt", ".tsv"))
+                   div(style = "color: white; font-size: 20px; white-space: nowrap;",
+                       fileInput("coord_file", "Upload Coordinate File (Optional)", accept = c(".txt", ".tsv"))
                    )
                  )
-                 
-               ), 
-               # Action Button Below
-               div(
-                 style = "position: relative; height: 150px;",  # Parent div for positioning
-                 actionButton("run_blast", "Run BLAST", 
-                              style = "position: absolute; top: 10%; left: 50%; transform: translate(-50%, -50%);
-                              width: 250px; height: 75px; font-size: 36px; background-color: #2F4E7D; color: white; 
-                              border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);")
                ),
                
-               # Download Buttons Absolutely Positioned Below
+               # Action Button
                div(
-                 style = "position: relative; height: 200px; text-align: center;",  # Parent div for absolute positioning
+                 style = "position: relative; height: 150px;",
+                 actionButton("run_blast", "Run BLAST",
+                              style = "position: absolute; top: 10%; left: 50%; transform: translate(-50%, -50%);
+                          width: 250px; height: 75px; font-size: 36px; background-color: #2F4E7D; color: white;
+                          border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);")
+               ),
+               
+               # Download Buttons
+               div(
+                 style = "position: relative; height: 200px; text-align: center;",
                  h4("Download Example Files", style = "font-size: 20px; color: white;"),
                  div(
-                   style = "position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 20px;",
+                   style = "position: absolute; top: 25%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 20px;",
                    downloadButton("download_18S", "18S FASTA", style = "width: 210px; font-size: 16px; background-color: #d2d2d2; color: black;"),
                    downloadButton("download_COI", "COI FASTA", style = "width: 210px; font-size: 16px; background-color: #d2d2d2; color: black;"),
                    downloadButton("download_18S_table", "18S ASV Table", style = "width: 210px; font-size: 16px; background-color: #d2d2d2; color: black;"),
@@ -363,7 +370,7 @@ tags$style(HTML("
                    downloadButton("download_COI_coord", "COI Coordinates", style = "width: 210px; font-size: 16px; background-color: #d2d2d2; color: black;")
                  )
                )
-          )   
+             )
     ),
 
     # Results Tab
@@ -380,7 +387,7 @@ tags$style(HTML("
                         
                         tags$div(
                           style = "font-size: 18px; color: white;",
-                          "Percentage Identity: ", 
+                          "Percentage Identity (%): ", 
                           textOutput("slider_pident_value", inline = TRUE)
                         ),
                         
@@ -389,11 +396,11 @@ tags$style(HTML("
                         
                         tags$div(
                           style = "font-size: 18px; color: white;",
-                          "Sequence Length: ", 
+                          "Sequence Coverage (%): ", 
                           textOutput("slider_length_value", inline = TRUE)
                         ),
                         
-                        sliderInput("length_filter", "", min = 50, max = 1000, value = c(200, 1000)),
+                        sliderInput("length_filter", "", min = 90, max = 100, value = c(90, 100)),
                         
                         tags$script(HTML("
     $(document).on('input', 'input[type=range]', function() {
@@ -415,11 +422,11 @@ tags$style(HTML("
                         ),
                       div(style = "color: white; font-size: 20px; white-space: nowrap; ",
                       h3("Likely Species of Interest detection"),
-                      p("The best similarity match was found for only a single Species of Interest species")),
+                      p("The best similarity match was found for only a single Species of Interest species. Similarity scores are denoted in brackets.")),
                       uiOutput("soi_species_boxes_likely"),
                       div(style = "color: white; font-size: 20px; white-space: nowrap; ",
                       h3("Putative Species of Interest detection"),
-                      p("Best similarity match is shared by multiple species. Further investigation is required.")),
+                      p("Best similarity match is shared by multiple species. Similarity scores are denoted in brackets. Further investigation is required.")),
                       uiOutput("soi_species_boxes_potential"),
                       div(
                         style = "position: fixed;
@@ -445,19 +452,30 @@ tags$style(HTML("
     tabPanel(
       "Controls", value = "control_res",
       fluidPage(
-        h3("Species of Interest in the Controls"),
+        div(style = "color: white; white-space: nowrap; ",
+        h3("Species of Interest in the Controls")),
         uiOutput("download_controls_table_ui"),
-        p("Presence of SoI in the Controls"),
+        tags$ul(
+          tags$li(style = "color: #d4edda;", "Green: Not present in controls"),
+          tags$li(style = "color: #deabaf;", "Red: Detected in controls")),
         uiOutput("species_cards_controls")
       )
     ),
     tabPanel(
       "Replication", value = "replication_res",
       fluidPage(
-        h3("Detection Heatmap (Replicate-Based Confidence)"),
+        div(style = "color: white; white-space: nowrap; ",
+        h3("Detection Heatmap (Replicate-Based Confidence)")),
         sliderInput("abundance_threshold", 
                     "Minimum Abundance Threshold:",
                     min = 0, max = 500, value = 0, step = 10),
+        selectInput(
+          "soi_grouping",
+          "Summarise Species of Interest counts by:",
+          choices = c("Site", "Region"),
+          selected = "Site",
+          width = "250px"
+        ),
         uiOutput("download_replication_table_ui"),
         tags$ul(
           tags$li(style = "color: #d4edda;", "Green: Species of Interest observed in > 75% of replicates (requires at least 3 replicates)"),
@@ -467,61 +485,34 @@ tags$style(HTML("
         uiOutput("heatmap_ui")
       )
     ),
-    tabPanel("Visualisations",
-             
-             # --- TOP ROW WITH LEFT + RIGHT ELEMENTS ---
-             fluidRow(
-               column(
-                 6,
-                 div(
-                   style = "margin-top: 20px; min-height: 80px; display: flex; align-items: center;",
-                   downloadButton("download_heatmap_data", "Download Heatmap Data")
-                 )
+    tabPanel("Diversity",
+             sidebarLayout(
+               sidebarPanel(
+                 selectInput(
+                   "soi_grouping",
+                   "Summarise Species of Interest counts by:",
+                   choices = c("Site", "Region"),
+                   selected = "Site",
+                   width = "250px"
+                 ),
+                 div(style = "color: white; font-size: 20px; ",
+                 p("# of ASVs for Species of Interest ASV at each site."),
+                 p("Bubbles are scaled by number of ASVs. Click on site to see values"))
                ),
-               column(
-                 6,
-                 div(
-                   style = "margin-top: 20px; min-height: 80px; display: flex; align-items: center;",
-                   selectInput(
-                     "soi_grouping",
-                     "Summarise Species of Interest counts by:",
-                     choices = c("SampleID", "Site", "Region"),
-                     selected = "SampleID",
-                     width = "250px"
-                   )
-                 )
-               )
-             ),
-             
-             # --- NEXT ROW WITH HEATMAP + MAP ---
-             fluidRow(
-               column(
-                 6,
+               mainPanel(
                  div(
                    class = "vis-panel",
-                   h3("Presence of species of interest in each submitted sample"),
-                   div(
-                     class = "vis-scroll",
-                     uiOutput("SOI_heatmap_ui")
-                   )
-                 )
-               ),
-               column(
-                 6,
-                 div(
-                   class = "vis-panel",
-                   h3("# of ASVs for Species of Interest ASV at each site."),
-                   p("Bubbles are scaled by number of ASVs. Click on site to see numbers"),
                    div(
                      class = "vis-scroll",
                      leafletOutput("soi_map", height = "500px")
                    )
                  )
                )
-             )),
+             )
+    ),
     
     
-    tabPanel("Map",
+    tabPanel("Distribution",
               sidebarLayout(
                 sidebarPanel(
                   div(style = "color: white; font-size: 20px; white-space: nowrap; ",
@@ -855,7 +846,27 @@ tags$style(HTML("
                                       plotOutput("dbcomparison_heatmap")
                                     )
                                   )
-                         )       
+                         ),
+              tabPanel(
+                "Species Differentiation", value = "differentiation_res",
+                conditionalPanel(
+                  condition = "output.show_differentiation",
+                  
+                  div(
+                    style = "color: white; font-size: 18px; font-weight: bold;",
+                    h3("Species Differentiation Analysis")
+                  ),
+                  
+                  p("Shows which species have sequences with 100% identity matches to other species in the database",
+                    style = "color: white;"),
+                  
+                  downloadButton("download_differentiation", "Download Differentiation Analysis"),
+                  
+                  tags$div(style = "margin-bottom: 20px;"),
+                  
+                  DTOutput("differentiation_table")
+                )
+              ) 
                          
              )),
     
@@ -899,6 +910,9 @@ tags$style(HTML("
                    p("A ", tags$i("Putative"), " detection is when  multiple species share the top bitscore for an ASV. This indicates the marker could not distinguish between species and further investigation is required.")),
                    div(style = "color: white; font-size: 16px; margin-bottom: 40px;", 
                    p("If a ASV table and coordinate file have been include visualistation of the detections are available. This includes a heatmap showing detection per sample/site/region, a map showing the number of detections per sample/site/region and a map showign where species of interest were detected")
+                   ),
+                   div(style = "color: white; font-size: 16px; margin-bottom: 40px;", 
+                       p("The detection of species of interest in the controls and the frequency of detection in replicates can also be assessed if the ASV table and coordinates are included.")
                    )
                  ),
                  
@@ -932,7 +946,11 @@ tags$style(HTML("
                    div(style = "color: white; font-size: 16px; margin-bottom: 40px;",    
                        p("A BLAST database was constructed using makeblastdb (", tags$a(href = "https://doi.org/10.1186/1471-2105-10-421", class = "custom-link", target = "_blank", "Camacho et al 2009"), ")")),
                    div(style = "color: white; font-size: 16px; margin-bottom: 40px;",    
-                       p("A presence/absence heatmap is created (with a downloadable table) to indicate the completeness of the database for that gene/primer"))   
+                       p("A presence/absence heatmap is created (with a downloadable table) to indicate the completeness of the database for that gene/primer")), 
+                   div(style = "color: white; font-size: 16px; margin-bottom: 40px;",    
+                       p("For each species of interest with sequences in the database sequence similarity is assessed with all the other sequences in the databse to assess the ability to differentiate species of interest with the gene/primer set.")), 
+                   div(style = "color: white; font-size: 16px; margin-bottom: 40px;",    
+                       p("A comparison tab enables completion to be assessed amongst different databases allowing the suitability of different genes/primers to be assessed.")) 
                    
                  ),
                  
@@ -1021,10 +1039,11 @@ server <- function(input, output, session) {
   observeEvent(input$btn5, { updateTabsetPanel(session, "tabs", selected = "help") })
   
   Sys.setenv(PYTHONWARNINGS="ignore::UserWarning")
-
+#Set variables
   crabs_path <- Sys.which("crabs")
   ncbi_email <- Sys.getenv("NCBI_EMAIL")
   
+  #Create reavtiveVal's
   genera_rv       <- reactiveVal(NULL)
   species_list_rv <- reactiveVal(NULL)
   query_mode_rv   <- reactiveVal(NULL)
@@ -1039,6 +1058,57 @@ server <- function(input, output, session) {
   polygon_wkt <- reactiveVal(NULL)
   blast_results <- reactiveVal("")
   historic_data <- reactiveVal(data.frame())
+  error_log    <- reactiveVal(character(0))
+  pipeline_failed <- reactiveVal(FALSE)
+  show_differentiation <- reactiveVal(FALSE)
+  # Helper to log an error message and mark pipeline as failed
+  log_error <- function(msg) {
+    error_log(c(error_log(), msg))
+    pipeline_failed(TRUE)
+  }
+  
+  
+  # Auto popup on failure
+  observe({
+    req(pipeline_failed())
+    showModal(modalDialog(
+      title = div(icon("triangle-exclamation"), " Pipeline Error",
+                  style = "color: #c0392b; font-weight: bold;"),
+      verbatimTextOutput("error_output"),
+      footer = tagList(
+        actionButton("restart_pipeline", "Restart Pipeline",
+                     style = "background-color: #c0392b; color: white;
+                            font-size: 16px; width: 180px;"),
+        modalButton("Dismiss")
+      )
+    ))
+  })
+  
+  output$error_output <- renderText({
+    if (length(error_log()) == 0) return(NULL)
+    paste("ERRORS:\n", paste(error_log(), collapse = "\n"))
+  })
+  
+  # Reset handler
+  observeEvent(input$restart_pipeline, {
+    error_log(character(0))
+    pipeline_failed(FALSE)
+    removeModal()
+    
+    # All your reactiveVals listed here
+    show_results(FALSE)
+    gbif_request_id(NULL)
+    gbif_results(NULL)
+    species_list_rv(NULL)
+    genera_rv(NULL)
+    species_dataframe_rv(NULL)
+    additional_species_rv(NULL)
+    polygon_wkt(NULL)
+    query_mode_rv(NULL)
+    selected_sources_rv(NULL)
+    show_differentiation(FALSE)
+    showNotification("Ready to try again.", type = "message", duration = 4)
+  })
   
 ####Check and update taxonomy files####
   #Check if the taxonomy files exist and how old they are
@@ -1133,10 +1203,12 @@ server <- function(input, output, session) {
     return(NULL)
   })
   
+  #give text of slider length
   output$slider_length_value <- renderText({
     paste(input$length_filter[1], "to", input$length_filter[2])
   })
   
+  #delay reaction by 1 secont
   debounced_length_filter <- reactive({
     input$length_filter
   }) %>% debounce(1000)
@@ -1155,33 +1227,47 @@ server <- function(input, output, session) {
   observeEvent(input$run_blast, {
     req(input$query_file, input$db_choice)
     
+    # Clear previous errors on fresh run
+    error_log(character(0))
+    pipeline_failed(FALSE)
+    #Show modal that process is running
     showModal(modalDialog(
       title  = "Processing",
       "Running BLAST... Please wait.",
       footer = NULL
     ))
-    
+    #Extract input paths and parameters
     query_path  <- input$query_file$datapath
     db_path     <- file.path("databases", input$db_choice)
     output_file <- tempfile(fileext = ".txt")
-    
-    shiny::validate(
-      need(file.exists(query_path),              "Query file is missing or invalid."),
-      need(file.exists(paste0(db_path, ".nin")), "Database files are missing or the path is incorrect.")
-    )
-    
-    blast_command <- build_blast_command(query_path, db_path, output_file)
+    max_target_seqs <- input$max_target_seqs
+    #Check the query file exists
+    if (!file.exists(query_path)) {
+      log_error("Query file is missing or invalid.")
+      removeModal(); return(NULL)
+    }
+    #Check for the existance of database files
+    if (!file.exists(paste0(db_path, ".nin"))) {
+      log_error("Database files are missing or the path is incorrect.")
+      removeModal(); return(NULL)
+    }
+    #Build blastn command
+    blast_command <- build_blast_command(query_path, db_path, output_file, max_target_seqs)
     
     tryCatch({
+      #Execute the blast and then merge the taxonomy information
       blast_results.df <- run_blast(blast_command, output_file)
       blast_results.df <- merge_blast_taxonomy(blast_results.df)
-      
+      #Store results
       blast_results(blast_results.df)
+      #Dismiss modal on success and move to the results tab
+      removeModal()
       updateTabsetPanel(session, "tabs", selected = "soiresults")
       
+      
     }, error = function(e) {
-      blast_results(paste("An error occurred while running BLAST:", e$message))
-    }, finally = {
+      #On failure load an error popup and allow restart
+      log_error(paste("An error occurred while running BLAST:", e$message))
       removeModal()
     })
   })
@@ -1189,6 +1275,7 @@ server <- function(input, output, session) {
   
 ####Blast results####
   
+  #Filter the results based on percentage identity (pident_range) and coverage (length_range)
   filtered_results <- reactive({
     req(blast_results())
     filter_blast_results(
@@ -1199,11 +1286,13 @@ server <- function(input, output, session) {
     )
   })
   
+  #Further filtering based on top bitscores and flag if multiple instances.
   filtered_results2 <- reactive({
     req(filtered_results())
     get_top_bitscore_results(filtered_results())
   })
   
+  #Make species boxes for those species that are likely
   output$soi_species_boxes_likely <- renderUI({
     req(filtered_results2())
     
@@ -1217,7 +1306,7 @@ server <- function(input, output, session) {
       "Loading species boxes (likely)... Please wait.",
       footer = NULL
     ))
-    
+    # Build one species box per unique species in the filtered results
     box_list <- lapply(unique(soi_results$sscinames), function(species) {
       build_species_box(species, soi_results)
     })
@@ -1226,6 +1315,7 @@ server <- function(input, output, session) {
     do.call(tagList, box_list)
   })
   
+  #Make species boxes for those species that are potential
   output$soi_species_boxes_potential <- renderUI({
     req(filtered_results2())
     
@@ -1245,7 +1335,178 @@ server <- function(input, output, session) {
     })
     
     removeModal()
+    #Disclaimer
+    showModal(modalDialog(
+      title = div(icon("triangle-exclamation"), " Important Disclaimer",
+                  style = "color: #e67e22; font-weight: bold; font-size: 20px;"),
+      div(
+        style = "font-size: 15px; line-height: 1.6;",
+        p("The BLAST results presented in this application are provided for informational 
+         purposes. The results should not be used as the sole basis for regulatory, 
+         management, or conservation decisions."),
+        p("Species identifications are based on top bitscores after meeting similarity and coverage thresholds and are subject to 
+         the limitations of the reference database used. Results may be affected by, amongst others:"),
+        tags$ul(
+          tags$li("Incomplete or biased reference databases"),
+          tags$li("Primer or amplification bias"),
+          tags$li("Taxonomic ambiguity between closely related species")
+        ),
+        p("All results should be interpreted carefully and validated 
+         against additional evidence where possible."),
+        p(strong("By clicking 'Accept' you acknowledge that you have read and understood 
+                this disclaimer."),
+          style = "color: #e67e22;")
+      ),
+      footer    = modalButton("Accept"),
+      size      = "m",
+      easyClose = FALSE
+    ))
+    
     do.call(tagList, box_list)
+  })
+  
+####Blast controls####
+  
+  #Built ASV table for SOI flagged ASVs
+  asv_table_filtered <- reactive({
+    req(asv_table(), coordinates(), filtered_results2())
+    
+    detected     <- filtered_results2()
+    detected <- detected %>% filter(SOI_flag == TRUE)
+    soi_species  <- unique(detected$qseqid)
+    
+    meta         <- coordinates()
+    meta$SampleID <- as.character(meta$SampleID)
+    sample_ids   <- meta$SampleID
+    
+    asv_raw <- asv_table()
+    
+    keep_cols <- intersect(c("ASV", sample_ids), colnames(asv_raw))
+    
+    out <- asv_raw %>%
+      dplyr::select(all_of(keep_cols)) %>%
+      dplyr::filter(ASV %in% soi_species)
+    
+    out_long <- tidyr::pivot_longer(
+      out,
+      cols      = tidyselect::all_of(sample_ids),
+      names_to  = "SampleID",
+      values_to = "Abundance"
+    )
+    
+    out_long$SampleID <- as.character(out_long$SampleID)
+    out_long_metadata <- left_join(out_long, meta, by = "SampleID")
+    
+    seqID_species     <- detected %>% select(qseqid, sscinames)
+    out_long_metadata <- left_join(out_long_metadata, seqID_species,
+                                   by = c("ASV" = "qseqid"))
+    
+    out_long_metadata
+  })
+  
+  #Make the controls detection sumamry
+  controls_summary_reactive <- reactive({
+    req(asv_table_filtered())
+    compute_controls_summary(asv_table_filtered())
+  })
+  
+  # Conditionally render the controls table download button
+  output$download_controls_table_ui <- renderUI({
+    downloadButton("download_controls_table", "Download Table",
+                   style = "width:200px; font-size:16px; margin-top:10px;")
+  })
+  
+  # Download the controls summary table as a CSV
+  output$download_controls_table <- downloadHandler(
+    filename = function() paste0("controls_table_", Sys.Date(), ".csv"),
+    content  = function(file) {
+      df <- controls_summary_reactive()
+      req(nrow(df) > 0)
+      write.csv(prepare_controls_download(df), file, row.names = FALSE)
+    }
+  )
+  
+  #Render species cards for the controls. One card per species which shows teh detection in a heatmap for each ASV. 
+  output$species_cards_controls <- renderUI({
+    summary_df   <- controls_summary_reactive()
+    req(summary_df)
+    species_list <- unique(summary_df$sscinames)
+    
+    tagList(
+      lapply(seq_along(species_list), function(i) {
+        sp   <- species_list[i]
+        asvs <- summary_df %>% filter(sscinames == sp)
+        build_control_species_card(sp, asvs, i)
+      })
+    )
+  })
+  
+  #Render heatmap.
+  observe({
+    summary_df   <- controls_summary_reactive()
+    req(summary_df)
+    species_list <- unique(summary_df$sscinames)
+    
+    for (i in seq_along(species_list)) {
+      local({
+        my_i <- i
+        sp   <- species_list[my_i]
+        asvs <- summary_df %>% filter(sscinames == sp)
+        
+        output[[paste0("control_heatmap_", my_i)]] <- renderPlot({
+          plot_control_heatmap(asvs)
+        }, bg = "transparent")
+      })
+    }
+  })  
+  
+  
+####Blast replication####
+  
+  #Compute replication detection summary. Group by Site or Region with default Site
+  replicate_summary <- reactive({
+    req(asv_table_filtered())
+    
+    group_var <- if (input$soi_grouping %in% c("Site", "Region")) {
+      input$soi_grouping
+    } else {
+      "Site"
+    }
+    
+    compute_replicate_summary(asv_table_filtered(), input$abundance_threshold, group_var)
+  })
+  
+  #Download of the replicate table
+  output$download_replicate_table <- downloadHandler(
+    filename = function() paste0("replicate_table_", Sys.Date(), ".csv"),
+    content  = function(file) {
+      df <- replicate_summary()
+      req(nrow(df) > 0)
+      write.csv(prepare_replicate_download(df), file, row.names = FALSE)
+    }
+  )
+  #Render heatmap layout
+  output$heatmap_ui <- renderUI({
+    req(replicate_summary())
+    build_replicate_heatmap_ui(replicate_summary())
+  })
+  
+  #Make one plot per species
+  observe({
+    req(replicate_summary())
+    species_list <- unique(replicate_summary()$sscinames)
+    
+    for (i in seq_along(species_list)) {
+      local({
+        my_i <- i
+        sp   <- species_list[my_i]
+        
+        output[[paste0("replicate_heatmap_", my_i)]] <- renderPlot({
+          df_sp <- replicate_summary() %>% filter(sscinames == sp)
+          plot_replicate_heatmap(df_sp)
+        }, bg = "transparent")
+      })
+    }
   })
   
 ####Blast visualisation####
@@ -1265,36 +1526,6 @@ server <- function(input, output, session) {
     soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% select(qseqid, sscinames)
     paste("Species of Interest ASVs found:", length(unique(soi_results$qseqid)),
           "\nTotal samples:", ncol(asv_table()) - 1)
-  })
-  
-  output$download_heatmap_data <- downloadHandler(
-    filename = function() paste0("SoI_heatmap_data_", Sys.Date(), ".csv"),
-    content  = function(file) {
-      req(asv_table(), filtered_results2())
-      shiny::validate(need(nrow(filtered_results2() %>% filter(SOI_flag == TRUE)) > 0,
-                           "No Species of Interest found in filtered results"))
-      heatmap_wide <- prepare_heatmap_download(asv_table(), filtered_results2())
-      write.csv(heatmap_wide, file, row.names = FALSE)
-    }
-  )
-  
-  output$SOI_heatmap <- renderPlot({
-    req(asv_table(), filtered_results2())
-    soi_results <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% select(qseqid, sscinames)
-    shiny::validate(need(nrow(soi_results) > 0, "No species of interest found in filtered results"))
-    summarise_by  <- as.character(input$soi_grouping)[1]
-    heatmap_df    <- prepare_heatmap_data(asv_table(), filtered_results2(), coordinates(), summarise_by)
-    plot_soi_heatmap(heatmap_df, summarise_by)
-  }, bg = "transparent")
-  
-  output$SOI_heatmap_ui <- renderUI({
-    req(asv_table(), filtered_results2())
-    soi_results  <- filtered_results2() %>% filter(SOI_flag == TRUE) %>% select(qseqid, sscinames)
-    summarise_by <- input$soi_grouping
-    dims         <- calculate_heatmap_dimensions(asv_table(), soi_results, coordinates(), summarise_by)
-    plotOutput("SOI_heatmap",
-               width  = paste0(dims$width,  "px"),
-               height = paste0(dims$height, "px"))
   })
   
   soi_summary <- reactive({
@@ -1816,6 +2047,10 @@ historic_data <- reactiveVal(load_historic_data())
   observeEvent(input$generate_run, {
     req(input$species_file)
     
+    # Clear any errors from a previous run
+    error_log(character(0))
+    pipeline_failed(FALSE)
+    
     showModal(modalDialog(
       title = "Processing",
       "Running Database Construction... Please wait.",
@@ -1828,31 +2063,30 @@ historic_data <- reactiveVal(load_historic_data())
     
     #read species list
     species_list <- readLines(input$species_file$datapath) %>% trimws()
-    species_list_rv(species_list) #store as reactive
+    species_list_rv(species_list) 
     #get genera from the species list
     genera       <- unique(sapply(species_list, function(x) strsplit(x, " ")[[1]][1]))
-    genera_rv(genera) #store as reactive
+    genera_rv(genera) 
     
-    
-    #function to use gbif for family ids
-    family_taxon_ids <- get_family_taxon_ids(species_list)
-    
+    # Look up GBIF family taxon IDs for the species list
+    family_taxon_ids <- tryCatch(
+      get_family_taxon_ids(species_list),
+      error = function(e) { log_error(paste("Failed to retrieve taxon IDs:", e$message)); NULL }
+    )
     #No taxon ID notification
-    if (length(family_taxon_ids) == 0) {
-      showNotification("No valid taxon IDs found!", type = "error")
-      removeModal()
-      return(NULL)
+    if (is.null(family_taxon_ids) || length(family_taxon_ids) == 0) {
+      log_error("No valid taxon IDs found for the provided species list.")
+      removeModal(); return(NULL)
     }
     
     #WKT error notification
     wkt_polygon <- selected_wkt()
     if (is.null(wkt_polygon) || nchar(wkt_polygon) < 10) {
-      showNotification("No valid polygon selected. Draw a region first!", type = "error")
-      removeModal()
-      return(NULL)
+      log_error("No valid polygon selected. Draw a region on the map first.")
+      removeModal(); return(NULL)
     }
     
-    #see if there is a gbif cache of taxa for the coordinates
+    #See if there is a gbif cache of taxa for the coordinates
     cache        <- check_gbif_cache(family_taxon_ids, wkt_polygon)
     cache_path_rv(cache$path)
     
@@ -1860,20 +2094,26 @@ historic_data <- reactiveVal(load_historic_data())
       gbif_results(cache$data)
       showNotification("Using cached GBIF data", type = "message", duration = 5)
     } else {
-      req_download <- submit_gbif_download(
-        family_taxon_ids = family_taxon_ids,
-        wkt_polygon      = wkt_polygon
-      ) #Download new gbif data if no cache found.
+      # Submit a new GBIF download request if no cache exists
+      req_download <- tryCatch(
+        submit_gbif_download(family_taxon_ids = family_taxon_ids, wkt_polygon = wkt_polygon),
+        error = function(e) { log_error(paste("GBIF download submission failed:", e$message)); NULL }
+      )
+      if (is.null(req_download)) { removeModal(); return(NULL) }
       gbif_request_id(req_download)
       showNotification("GBIF download started...", type = "message", duration = 5)
     }
     
     #function to get the synonyms for the taxa in the list
-    synonyms_df <- get_synonyms(
-      species_list      = species_list,
-      db_name           = db_name(),
-      get_synonyms_gbif = get_synonyms_gbif
+    synonyms_df <- tryCatch(
+      get_synonyms(
+        species_list      = species_list,
+        db_name           = db_name(),
+        get_synonyms_gbif = get_synonyms_gbif
+      ),
+      error = function(e) { log_error(paste("Synonym lookup failed:", e$message)); NULL }
     )
+    if (is.null(synonyms_df)) { removeModal(); return(NULL) }
     species_dataframe_rv(synonyms_df)
   })
 
@@ -1888,7 +2128,10 @@ historic_data <- reactiveVal(load_historic_data())
     )
     
     if (!is.null(meta) && meta$status == "SUCCEEDED") {
-      occ <- process_gbif_zip(gbif_request_id())
+      occ <- tryCatch(
+        process_gbif_zip(gbif_request_id()),
+        error = function(e) { log_error(paste("Failed to process GBIF download:", e$message)); NULL }
+      )
       if (!is.null(occ)) {
         gbif_results(occ)
         saved <- save_gbif_cache(occ, cache_path_rv())
@@ -1949,9 +2192,8 @@ observeEvent(taxa_ready(), {
       ncbi_email      = ncbi_email
     )
     if (!success) {
-      showNotification("NCBI download failed", type = "error")
-      removeModal()
-      return(NULL)
+      log_error("NCBI download failed.")
+      removeModal(); return(NULL)
     }
   }
   
@@ -1965,9 +2207,8 @@ observeEvent(taxa_ready(), {
       bold_marker = input$bold_marker
     )
     if (!success) {
-      showNotification("BOLD download failed", type = "error")
-      removeModal()
-      return(NULL)
+      log_error("BOLD download failed.")
+      removeModal(); return(NULL)
     }
   }
   
@@ -1982,9 +2223,8 @@ observeEvent(taxa_ready(), {
       taxa_vector  = taxa_vector
     )
     if (!success) {
-      showNotification("SILVA download failed", type = "error")
-      removeModal()
-      return(NULL)
+      log_error("BOLD download failed.")
+      removeModal(); return(NULL)
     }
   }
   
@@ -1997,26 +2237,30 @@ observeEvent(taxa_ready(), {
       custom_fasta_path = input$custom_fasta$datapath
     )
     if (!success) {
-      showNotification("Custom FASTA import failed", type = "error")
-      removeModal()
-      return(NULL)
+      log_error("Custom FASTA import failed.")
+      removeModal(); return(NULL)
     }
   }
   
 ####CREATE BLAST DATABASE####
   
   #run function to create the blast database.
-  success <- create_database(
-    crabs_path       = crabs_path,
-    selected_sources = selected_sources,
-    custom_fasta     = input$custom_fasta,
-    forward_primer   = input$forward_primer,
-    reverse_primer   = input$reverse_primer,
-    db_name          = db_name()
-  )
+  success <- tryCatch({
+    create_database(
+      crabs_path       = crabs_path,
+      selected_sources = selected_sources,
+      custom_fasta     = input$custom_fasta,
+      forward_primer   = input$forward_primer,
+      reverse_primer   = input$reverse_primer,
+      db_name          = db_name()
+    )
+  }, error = function(e) {
+    log_error(paste("Database creation failed:", e$message))
+    removeModal()
+    return(FALSE)
+  })
   
   if (!success) {
-    showNotification("Database creation failed", type = "error")
     removeModal()
     return(NULL)
   }
@@ -2032,10 +2276,13 @@ observeEvent(taxa_ready(), {
 #Create dataframe for species presence from the download results
 species_presence <- reactive({
   req(input$species_file, species_dataframe_rv())
-  compute_species_presence(
-    species_dataframe  = species_dataframe_rv(),
-    cleaned_data_path  = "intermediate/merged_combined_output.tax.cleaned.final.tsv",
-    db_name            = db_name()
+  tryCatch(
+    compute_species_presence(
+      species_dataframe = species_dataframe_rv(),
+      cleaned_data_path = "intermediate/merged_combined_output.tax.cleaned.final.tsv",
+      db_name           = db_name()
+    ),
+    error = function(e) { log_error(paste("Species presence computation failed:", e$message)); NULL }
   )
 })
 
@@ -2093,6 +2340,211 @@ output$download_database_species_list <- downloadHandler(
   }
 )
 
+####Species Differentiation####
+
+species_presence_detailed <- reactive({
+  req(input$species_file)
+  req(species_dataframe_rv())
+  req(gbif_results())
+  
+  species_list <- readLines(input$species_file$datapath)
+  species_list <- trimws(species_list)
+  
+  # Show progress
+  showModal(modalDialog(
+    title = "Processing",
+    paste("Analyzing", length(species_list), "species... Please wait."),
+    footer = NULL
+  ))
+  
+  # Read the database
+  cleaned_data <- read.delim("intermediate/merged_combined_output.tax.cleaned.final.tsv", header = F, sep = "\t")
+  db_species <- cleaned_data[, 10]   # species column
+  db_genus <- cleaned_data[, 9]      # genus column
+  db_family <- cleaned_data[, 8]     # family column
+  
+  df <- species_dataframe_rv()
+  gbif_data <- gbif_results()
+  
+  # Pre-fetch family info for ALL species in the list (batch processing)
+  family_cache <- list()
+  for (soi in species_list) {
+    Sys.sleep(0.1)  # Rate limiting
+    family_cache[[soi]] <- tryCatch({
+      backbone_info <- name_backbone(name = soi)
+      if (!is.null(backbone_info$family)) {
+        backbone_info$family
+      } else {
+        NA_character_
+      }
+    }, error = function(e) {
+      NA_character_
+    })
+  }
+  
+  # Get all synonyms for ALL species upfront
+  all_soi_in_list <- species_list
+  all_synonyms_in_list <- df$canonicalName[df$SOI %in% all_soi_in_list]
+  
+  # For each species of interest, find related species
+  detailed_results <- lapply(species_list, function(soi) {
+    # Get genus and family from cache
+    genus <- strsplit(soi, " ")[[1]][1]
+    family <- family_cache[[soi]]
+    
+    # Get all synonyms for this SOI from the dataframe
+    soi_synonyms <- df$canonicalName[df$SOI == soi]
+    
+    # Find congeneric species (same genus but NOT any SOI or their synonyms) in database
+    congeneric_in_db <- unique(db_species[db_genus == genus & !is.na(db_species)])
+    congeneric_in_db <- setdiff(congeneric_in_db, c(all_soi_in_list, all_synonyms_in_list))
+    
+    # Check if congeneric species are in the region (from GBIF data)
+    congeneric_in_region <- if (!is.null(gbif_data) && "species" %in% colnames(gbif_data) && "genus" %in% colnames(gbif_data)) {
+      unique(gbif_data$species[gbif_data$genus == genus & !is.na(gbif_data$species)])
+    } else {
+      character(0)
+    }
+    congeneric_in_region <- setdiff(congeneric_in_region, c(all_soi_in_list, all_synonyms_in_list))
+    
+    # Find congeneric species that are in BOTH region AND database
+    congeneric_in_region_and_db <- intersect(congeneric_in_region, congeneric_in_db)
+    
+    # Find confamilial species (same family but NOT same genus) in database
+    if (!is.na(family)) {
+      confamilial_in_db <- unique(db_species[db_family == family & db_genus != genus & !is.na(db_species)])
+      confamilial_in_db <- setdiff(confamilial_in_db, c(all_soi_in_list, all_synonyms_in_list))
+      
+      # For confamilial in region - skip this for now as it's too slow
+      # Just use database family info
+      confamilial_in_region <- character(0)
+    } else {
+      confamilial_in_db <- character(0)
+      confamilial_in_region <- character(0)
+    }
+    
+    # Find confamilial species that are in BOTH region AND database
+    confamilial_in_region_and_db <- intersect(confamilial_in_region, confamilial_in_db)
+    
+    # Check if SOI itself is present
+    soi_present <- any(df$canonicalName[df$SOI == soi] %in% db_species)
+    
+    data.frame(
+      SOI = soi,
+      Genus = genus,
+      Family = ifelse(is.na(family), "Unknown", family),
+      SOI_Present = ifelse(soi_present, "Yes", "No"),
+      Congeneric_InRegion = length(congeneric_in_region),
+      Congeneric_InDB = length(congeneric_in_db),
+      Congeneric_InRegion_InDB = length(congeneric_in_region_and_db),
+      Confamilial_InRegion = length(confamilial_in_region),
+      Confamilial_InDB = length(confamilial_in_db),
+      Confamilial_InRegion_InDB = length(confamilial_in_region_and_db),
+      Congeneric_List = paste(congeneric_in_db, collapse = "; "),
+      Congeneric_Region_List = paste(congeneric_in_region, collapse = "; "),
+      Congeneric_Region_DB_List = paste(congeneric_in_region_and_db, collapse = "; "),
+      Confamilial_List = paste(head(confamilial_in_db, 10), collapse = "; "),
+      Confamilial_Region_DB_List = paste(head(confamilial_in_region_and_db, 10), collapse = "; "),
+      stringsAsFactors = FALSE
+    )
+  })
+  
+  detailed_df <- do.call(rbind, detailed_results)
+  
+  # Calculate percentage present
+  percentage_present <- (sum(detailed_df$SOI_Present == "Yes") / nrow(detailed_df)) * 100
+  
+  removeModal()
+  
+  list(
+    detailed_df = detailed_df,
+    percentage_present = percentage_present
+  )
+})
+
+#Compute species differentiation by running 100% BLAST on all species of interest. Identify those that can not be uniquely distinguished in the current database
+species_differentiation <- reactive({
+  req(species_presence_detailed())
+  req(file.exists("intermediate/merged_combined_output.tax.cleaned.final.tsv"))
+  
+  showModal(modalDialog(
+    title  = "Processing Species Differentiation",
+    "Analyzing 100% sequence matches... Please wait.",
+    footer = NULL
+  ))
+  
+  result <- tryCatch({
+    run_species_differentiation(
+      species_presence_detailed = species_presence_detailed(),
+      db_name                   = db_name()
+    )
+  }, error = function(e) {
+    log_error(paste("Species differentiation failed:", e$message))
+    NULL
+  })
+  
+  removeModal()
+  
+  # Flag results as ready if computation succeeded
+  if (!is.null(result)) show_differentiation(TRUE)
+  
+  result
+})
+
+output$show_differentiation <- reactive({
+  show_differentiation()
+})
+
+outputOptions(output, "show_differentiation", suspendWhenHidden = FALSE)
+
+# Render the differentiation results table
+output$differentiation_table <- renderDT({
+  req(species_differentiation())
+  
+  diff_data <- species_differentiation() %>%
+    distinct(Species, .keep_all = TRUE)
+  
+  datatable(
+    diff_data,
+    options  = list(
+      pageLength   = 25,
+      scrollX      = TRUE,
+      initComplete = JS(
+        "function(settings, json) {",
+        "  $(this.api().table().container()).css({'color': 'white'});",
+        "  $(this.api().table().header()).css({'color': 'white', 'background-color': 'transparent'});",
+        "  $('#' + settings.sTableId + '_length label').css('color', 'white');",
+        "  $('#' + settings.sTableId + '_filter label').css('color', 'white');",
+        "  $('#' + settings.sTableId + '_filter input').css({'color': 'white', 'background-color': 'transparent', 'border': '1px solid white'});",
+        "}"
+      )
+    ),
+    rownames = FALSE
+  ) %>%
+    formatStyle(
+      columns         = 1:ncol(diff_data),
+      color           = 'white',
+      backgroundColor = 'transparent'
+    ) %>%
+    formatStyle(
+      'Num_Matching_Species',
+      backgroundColor = styleInterval(c(0.5), c('#d4edda', '#deabaf'))
+    )
+})
+
+# Download the differentiation results as CSV
+output$download_differentiation <- downloadHandler(
+  filename = function() paste0(db_name(), "_species_differentiation.csv"),
+  content  = function(file) {
+    write.csv(species_differentiation(), file, row.names = FALSE)
+  }
+)
+
+observeEvent(input$main_tabs, {
+  req(input$main_tabs == "differentiation_res")
+  species_differentiation()
+})
+
 ####Database Comparison####
 
 comparison_data_folder <- "data"
@@ -2108,7 +2560,10 @@ observe({
 # Load comparison data
 dbcomparison_data <- reactive({
   req(input$dbcomparison_prefix != "")
-  load_dbcomparison_data(comparison_data_folder, input$dbcomparison_prefix)
+  tryCatch(
+    load_dbcomparison_data(comparison_data_folder, input$dbcomparison_prefix),
+    error = function(e) { log_error(paste("Failed to load comparison data:", e$message)); NULL }
+  )
 })
 
 # Download button UI
@@ -2134,11 +2589,13 @@ output$download_dbcomparison_table <- downloadHandler(
 output$dbcomparison_heatmap <- renderPlot({
   df <- dbcomparison_data()
   req(nrow(df) > 0)
-  plot_dbcomparison_heatmap(df)
-}, bg = "transparent",
-height = function() dbcomparison_plot_height(dbcomparison_data()),
-width  = function() dbcomparison_plot_width(dbcomparison_data()))
-
+  tryCatch(
+    plot_dbcomparison_heatmap(df),
+    error = function(e) { log_error(paste("Comparison heatmap failed:", e$message)) }
+  )
+}, bg     = "transparent",
+height    = function() dbcomparison_plot_height(dbcomparison_data()),
+width     = function() dbcomparison_plot_width(dbcomparison_data()))
 
 #####################
 ###Session cleanup###
