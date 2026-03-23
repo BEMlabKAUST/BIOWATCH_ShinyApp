@@ -755,7 +755,7 @@ tags$style(HTML("
                               border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);")),
                                     
                                       div(style = "color: white; font-size: 18px; margin-top: 20px;",
-                                          p("Construct an anti-clockwise polygon encompassing the region of interest to generate WKT coordinates or input previously obtained WKT coordinates into selection box"),
+                                          p("Construct a polygon encompassing the region of interest to generate WKT coordinates or input previously obtained WKT coordinates into selection box"),
                                       ),
                                       div(style = "margin-bottom: 20px; margin-top: 20px;",
                                           leafletOutput("database_map")),
@@ -826,6 +826,27 @@ tags$style(HTML("
                            )
                          ),
                          
+                    tabPanel(
+                           "Species Differentiation", value = "differentiation_res",
+                           conditionalPanel(
+                             condition = "output.show_differentiation",
+                             
+                             div(
+                               style = "color: white; font-size: 18px; font-weight: bold;",
+                               h3("Species Differentiation Analysis")
+                             ),
+                             
+                             p("Shows which species have sequences with 100% identity matches to other species in the database",
+                               style = "color: white;"),
+                             
+                             downloadButton("download_differentiation", "Download Differentiation Analysis"),
+                             
+                             tags$div(style = "margin-bottom: 20px;"),
+                             
+                             DTOutput("differentiation_table")
+                           )
+                         ),
+                         
               tabPanel("Database Comparison", value = "comparison",
                                   sidebarLayout(
                                     sidebarPanel(
@@ -846,27 +867,8 @@ tags$style(HTML("
                                       plotOutput("dbcomparison_heatmap")
                                     )
                                   )
-                         ),
-              tabPanel(
-                "Species Differentiation", value = "differentiation_res",
-                conditionalPanel(
-                  condition = "output.show_differentiation",
-                  
-                  div(
-                    style = "color: white; font-size: 18px; font-weight: bold;",
-                    h3("Species Differentiation Analysis")
-                  ),
-                  
-                  p("Shows which species have sequences with 100% identity matches to other species in the database",
-                    style = "color: white;"),
-                  
-                  downloadButton("download_differentiation", "Download Differentiation Analysis"),
-                  
-                  tags$div(style = "margin-bottom: 20px;"),
-                  
-                  DTOutput("differentiation_table")
-                )
-              ) 
+                         )
+           
                          
              )),
     
@@ -2191,7 +2193,7 @@ observeEvent(taxa_ready(), {
       final_query_str = final_query_str,
       ncbi_email      = ncbi_email
     )
-    if (!success) {
+    if (!isTRUE(success)) {
       log_error("NCBI download failed.")
       removeModal(); return(NULL)
     }
@@ -2206,7 +2208,7 @@ observeEvent(taxa_ready(), {
       taxa_vector = taxa_vector,
       bold_marker = input$bold_marker
     )
-    if (!success) {
+    if (!isTRUE(success)) {
       log_error("BOLD download failed.")
       removeModal(); return(NULL)
     }
@@ -2217,13 +2219,19 @@ observeEvent(taxa_ready(), {
   
   #if silva is selected then run the download of silva sequences
   if ("silva" %in% selected_sources) {
-    success <- download_silva(
-      crabs_path   = crabs_path,
-      silva_marker = input$silva_marker,
-      taxa_vector  = taxa_vector
-    )
-    if (!success) {
-      log_error("BOLD download failed.")
+    success <- tryCatch({
+      download_silva(
+        crabs_path   = crabs_path,
+        silva_marker = input$silva_marker,
+        taxa_vector  = taxa_vector
+      )
+    }, error = function(e) {
+      log_error(paste("SILVA download failed:", e$message))
+      return(FALSE)
+    })
+    
+    if (!isTRUE(success)) {
+      log_error("SILVA download failed.")
       removeModal(); return(NULL)
     }
   }
@@ -2236,7 +2244,7 @@ observeEvent(taxa_ready(), {
       crabs_path        = crabs_path,
       custom_fasta_path = input$custom_fasta$datapath
     )
-    if (!success) {
+    if (!isTRUE(success)) {
       log_error("Custom FASTA import failed.")
       removeModal(); return(NULL)
     }
@@ -2255,9 +2263,12 @@ observeEvent(taxa_ready(), {
       db_name          = db_name()
     )
   }, error = function(e) {
-    log_error(paste("Database creation failed:", e$message))
+    log_error(paste("Pipeline failed:", e$message, "\n", 
+                    paste(capture.output(traceback()), collapse = "\n")))
     removeModal()
-    return(FALSE)
+  }, warning = function(w) {
+    log_error(paste("Pipeline warning:", w$message))
+    removeModal()
   })
   
   if (!success) {
