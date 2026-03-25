@@ -91,6 +91,8 @@ if (docker_mode) {
     "))
  ),
  
+
+ 
  tags$style(HTML("
    #metadata_source .shiny-options-group label,
     #metadata_source .shiny-options-group .radio label,
@@ -544,7 +546,7 @@ tags$style(HTML("
              fluidRow(
                column(12,
                       div(style = "margin-top: 20px; text-align: center;",
-                      h3("Select species of interest for Historic Data", style = "color: white; font-size: 24px;"))
+                      h3("Select species of interest for Long Term Data", style = "color: white; font-size: 24px;"))
                )
              ),
              fluidRow(
@@ -629,7 +631,7 @@ tags$style(HTML("
                column(12,
                       div(style = "margin-top: 20px; text-align: center;",
                           
-                          actionButton("add_to_historic", "Add to Historic Data", 
+                          actionButton("add_to_historic", "Add to Long Term Data", 
                                        class = "btn-success",
                                        style = "font-size: 24px; padding: 10px 30px; background-color: #b0dce9; border: none; outline: none;")
                       )
@@ -1043,7 +1045,48 @@ server <- function(input, output, session) {
   Sys.setenv(PYTHONWARNINGS="ignore::UserWarning")
 #Set variables
   crabs_path <- Sys.which("crabs")
-  ncbi_email <- Sys.getenv("NCBI_EMAIL")
+  
+  user_creds <- reactiveValues(
+    email     = NULL,
+    gbif_user = NULL,
+    gbif_pwd  = NULL
+  )
+  
+  observe({
+    showModal(modalDialog(
+      tags$script(HTML("
+      $(document).ready(function() {
+        $('#creds-modal-body').closest('.modal-content').css({
+          'background-color': '#1e3a5c',
+          'background-image': 'none'
+        });
+        $('#creds-modal-body').closest('.modal-content').find('.modal-title').css('color', '#ffffff');
+        $('#creds-modal-body').closest('.modal-content').find('.modal-header').css('border-bottom-color', '#ffffff');
+      });
+    ")),
+      tags$div(
+        id = "creds-modal-body",
+        textInput("user_email",    "Email (NCBI & GBIF):", placeholder = "you@example.com"),
+        textInput("gbif_username", "GBIF Username:"),
+        passwordInput("gbif_password", "GBIF Password:")
+      ),
+      title = "Welcome — Please Enter Your Credentials",
+      footer = actionButton("submit_creds", "Continue", class = "btn-primary"),
+      easyClose = FALSE
+    ))
+  })
+  
+  observeEvent(input$submit_creds, {
+    req(input$user_email, input$gbif_username, input$gbif_password)
+    
+    user_creds$email     <- input$user_email
+    user_creds$gbif_user <- input$gbif_username
+    user_creds$gbif_pwd  <- input$gbif_password
+    
+    removeModal()
+  })
+  
+  
   
   #Create reavtiveVal's
   genera_rv       <- reactiveVal(NULL)
@@ -2098,7 +2141,10 @@ historic_data <- reactiveVal(load_historic_data())
     } else {
       # Submit a new GBIF download request if no cache exists
       req_download <- tryCatch(
-        submit_gbif_download(family_taxon_ids = family_taxon_ids, wkt_polygon = wkt_polygon),
+        submit_gbif_download(family_taxon_ids = family_taxon_ids, wkt_polygon = wkt_polygon,
+                             user  = user_creds$gbif_user,
+                             pwd   = user_creds$gbif_pwd,
+                             email = user_creds$email),
         error = function(e) { log_error(paste("GBIF download submission failed:", e$message)); NULL }
       )
       if (is.null(req_download)) { removeModal(); return(NULL) }
@@ -2191,7 +2237,7 @@ observeEvent(taxa_ready(), {
       crabs_path      = crabs_path,
       taxa_vector     = taxa_vector,
       final_query_str = final_query_str,
-      ncbi_email      = ncbi_email
+      ncbi_email      = user_creds$email
     )
     if (!isTRUE(success)) {
       log_error("NCBI download failed.")

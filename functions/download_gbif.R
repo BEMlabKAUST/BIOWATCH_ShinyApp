@@ -41,16 +41,16 @@ check_gbif_cache <- function(family_taxon_ids, wkt_polygon) {
 }
 
 #submit a GBIF occurrence download request for the taxa and geographic coordinates
-submit_gbif_download <- function(family_taxon_ids, wkt_polygon) {
+submit_gbif_download <- function(family_taxon_ids, wkt_polygon, user, pwd, email) {
   occ_download(
     pred_and(
       pred_in("taxonKey", family_taxon_ids),
       pred("geometry", wkt_polygon)
     ),
     format = "SIMPLE_CSV",
-    user  = Sys.getenv("GBIF_USER"),
-    pwd   = Sys.getenv("GBIF_PWD"),
-    email = Sys.getenv("GBIF_EMAIL")
+    user  = user,
+    pwd   = pwd,
+    email = email
   )
 }
 
