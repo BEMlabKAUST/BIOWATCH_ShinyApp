@@ -14,24 +14,6 @@ BIOWATCH is a R shiny app which aims to improve the detection of species of inte
        conda env create -f conda/environment.yml
 
        conda activate BIOWATCH
-
-       mkdir -p $CONDA_PREFIX/etc/conda/activate.d
-       cat << EOF > $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
-       # NCBI
-       export NCBI_EMAIL="your@email.com"
-       # GBIF credentials
-       export GBIF_EMAIL="your.gbif@email.com"
-       export GBIF_USER="your_gbif_username"
-       export GBIF_PWD="your_gbif_password"
-       EOF
-
-       mkdir -p $CONDA_PREFIX/etc/conda/deactivate.d
-       cat << EOF > $CONDA_PREFIX/etc/conda/deactivate.d/env_vars.sh
-       unset NCBI_EMAIL
-       unset GBIF_EMAIL
-       unset GBIF_USER
-       unset GBIF_PWD
-       EOF
        
        chmod +x launch.sh
 
