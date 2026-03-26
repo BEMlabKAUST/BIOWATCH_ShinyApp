@@ -1,6 +1,9 @@
 compute_controls_summary <- function(asv_table_filtered) {
   
-  #Filter dataset to the controls and identify if any of the species of interest were detected in controls
+  # Check if any controls exist
+  controls_exist <- any(asv_table_filtered$Type == "Control", na.rm = TRUE)
+  if (!controls_exist) return(NULL)
+  
   controls_df <- asv_table_filtered %>%
     filter(Type == "Control") %>%
     group_by(ASV, sscinames) %>%
@@ -9,7 +12,8 @@ compute_controls_summary <- function(asv_table_filtered) {
       .groups  = "drop"
     )
   
-  #Summarise the control data with the number of ASVs that have detection in the controls compared to the number of ASVs found for that species.
+  if (nrow(controls_df) == 0) return(NULL)
+  
   controls_summary <- controls_df %>%
     group_by(sscinames) %>%
     summarise(

@@ -18,7 +18,6 @@ library(htmlwidgets)
 library(leaflet.extras)
 library(sf)
 library(wk)
-library(geojsonio)
 library(DT)
 library(reticulate)
 library(future)
@@ -353,14 +352,19 @@ tags$style(HTML("
                div(
                  style = "position: relative; height: 150px;",
                  actionButton("run_blast", "Run BLAST",
-                              style = "position: absolute; top: 10%; left: 50%; transform: translate(-50%, -50%);
-                          width: 250px; height: 75px; font-size: 36px; background-color: #2F4E7D; color: white;
-                          border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);")
+                              style = "position: absolute; top: 5%; left: 50%; transform: translate(-50%, -50%);
+                        width: 250px; height: 75px; font-size: 36px; background-color: #2F4E7D; color: white;
+                        border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);"),
+                 actionButton("reset_blast", span(icon("rotate-left"), " Reset"), 
+                              style = "position: absolute; top: 5%; left: 82%; transform: translate(-50%, -50%);
+                        width: 100px; height: 45px; font-size: 18px; background-color: #2F4E7D; color: white;
+                        border: none; outline: none; box-shadow: 2px 2px 7.5px rgba(0,0,0,0.5);
+                        border-radius: 50%;")
                ),
                
                # Download Buttons
                div(
-                 style = "position: relative; height: 200px; text-align: center;",
+                 style = "position: relative; height: 200px; text-align: center; margin-top: -30px;",
                  h4("Download Example Files", style = "font-size: 20px; color: white;"),
                  div(
                    style = "position: absolute; top: 25%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 20px;",
@@ -971,7 +975,7 @@ tags$style(HTML("
                    
                    
                    div(style = "color: white; font-size: 16px;", 
-                   p("shiny, shinyWidgets, shinyjs, bslib, leaflet, data.table, tidyverse, rgbif, htmlwidgets, leaflet.extras, sf, wk, geojsonio, DT, reticulate, future, promises")),
+                   p("shiny, shinyWidgets, shinyjs, bslib, leaflet, data.table, tidyverse, rgbif, htmlwidgets, leaflet.extras, sf, wk, geojsonsf, DT, reticulate, future, promises")),
                    
                    div(style = "color: white; font-size: 18px; font-weight: bold; margin-bottom: 20px; margin-top: 20px;", 
                    h4("Other Software")),
@@ -1052,7 +1056,7 @@ server <- function(input, output, session) {
     gbif_pwd  = NULL
   )
   
-  observe({
+  session$onFlushed(function() {
     showModal(modalDialog(
       tags$script(HTML("
       $(document).ready(function() {
@@ -1066,7 +1070,7 @@ server <- function(input, output, session) {
     ")),
       tags$div(
         id = "creds-modal-body",
-        textInput("user_email",    "Email (NCBI & GBIF):", placeholder = "you@example.com"),
+        textInput("user_email", "Email (NCBI & GBIF):", placeholder = "you@example.com"),
         textInput("gbif_username", "GBIF Username:"),
         passwordInput("gbif_password", "GBIF Password:")
       ),
@@ -1074,16 +1078,49 @@ server <- function(input, output, session) {
       footer = actionButton("submit_creds", "Continue", class = "btn-primary"),
       easyClose = FALSE
     ))
-  })
+  }, once = TRUE)
   
   observeEvent(input$submit_creds, {
     req(input$user_email, input$gbif_username, input$gbif_password)
-    
+    #set credentials
     user_creds$email     <- input$user_email
     user_creds$gbif_user <- input$gbif_username
     user_creds$gbif_pwd  <- input$gbif_password
     
     removeModal()
+    #Check if taxonomy files are present and if not download them
+    data_dir <- "data"
+    res      <- check_taxonomy_files(data_dir)
+    
+    if (res$status == "missing") {
+      showModal(modalDialog(
+        title  = "Taxonomy files missing",
+        paste("Missing files:", paste(res$missing, collapse = ", ")),
+        "They will now be downloaded automatically.",
+        footer = NULL
+      ))
+      download_taxonomy_async(data_dir) %...>% {
+        removeModal()
+        showNotification("Taxonomy files downloaded", type = "message", duration = 5)
+      } %...!% {
+        removeModal()
+        showNotification("Taxonomy download failed", type = "error", duration = 10)
+      }
+      
+    } else if (res$status == "old") {
+      showModal(modalDialog(
+        title = "Taxonomy files are old",
+        paste(
+          "Some taxonomy files are older than 6 months:",
+          paste(names(res$ages), res$ages, "days", collapse = ", ")
+        ),
+        "Would you like to update them now?",
+        footer = tagList(
+          modalButton("Later"),
+          actionButton("update_taxonomy", "Update Now")
+        )
+      ))
+    }
   })
   
   
@@ -1155,62 +1192,40 @@ server <- function(input, output, session) {
     showNotification("Ready to try again.", type = "message", duration = 4)
   })
   
-####Check and update taxonomy files####
-  #Check if the taxonomy files exist and how old they are
-  observeEvent(TRUE, {
-    data_dir <- "data"
-    res      <- check_taxonomy_files(data_dir)
-    #See if files exist
-    if (res$status == "missing") {
-      showModal(modalDialog(
-        title  = "Taxonomy files missing",
-        paste("Missing files:", paste(res$missing, collapse = ", ")),
-        "They will now be downloaded automatically.",
-        footer = NULL
-      ))
-      download_taxonomy_async(data_dir)
-      removeModal()
-     #See if they are old than 6 months or not 
-    } else if (res$status == "old") {
-      showModal(modalDialog(
-        title = "Taxonomy files are old",
-        paste(
-          "Some taxonomy files are older than 6 months:",
-          paste(names(res$ages), res$ages, "days", collapse = ", ")
-        ),
-        "Would you like to update them now?",
-        footer = tagList(
-          modalButton("Later"),
-          actionButton("update_taxonomy", "Update Now")
-        )
-      ))
-    }
-  }, once = TRUE)
+
   
-  #If files don't exist or too old then download new versions
-  observeEvent(input$update_taxonomy, {
-    data_dir <- "data"
+  
+  reset_pipeline <- function() {
+    error_log(character(0))
+    pipeline_failed(FALSE)
+    
+    show_results(FALSE)
+    gbif_request_id(NULL)
+    gbif_results(NULL)
+    species_list_rv(NULL)
+    genera_rv(NULL)
+    species_dataframe_rv(NULL)
+    additional_species_rv(NULL)
+    polygon_wkt(NULL)
+    query_mode_rv(NULL)
+    selected_sources_rv(NULL)
+    show_differentiation(FALSE)
+    blast_results(NULL)
+    
+    showNotification("Ready to try again.", type = "message", duration = 4)
+  }
+  
+#Reset the parameters for blast  
+  # Error modal reset button
+  observeEvent(input$restart_pipeline, {
     removeModal()
-    
-    showModal(modalDialog(
-      title  = "Updating taxonomy",
-      tagList(
-        "Downloading taxonomy files. This may take several minutes.",
-        br(),
-        tags$div(class = "spinner-border text-primary", role = "status")
-      ),
-      footer = NULL
-    ))
-    
-    download_taxonomy_async(data_dir) %...>% {
-      removeModal()
-      showNotification("Taxonomy update complete", type = "message", duration = 5)
-    } %...!% {
-      removeModal()
-      showNotification(paste("Taxonomy update failed:", .), type = "error", duration = 10)
-    }
+    reset_pipeline()
   })
   
+  # BLAST page reset button
+  observeEvent(input$reset_blast, {
+    reset_pipeline()
+  })
   
 ########################################  
 ####Running BLAST####  
@@ -1452,9 +1467,26 @@ server <- function(input, output, session) {
   #Make the controls detection sumamry
   controls_summary_reactive <- reactive({
     req(asv_table_filtered())
-    compute_controls_summary(asv_table_filtered())
+    
+    result <- tryCatch({
+      compute_controls_summary(asv_table_filtered())
+    }, error = function(e) {
+      log_error(paste("Controls summary failed:", e$message))
+      e
+    })
+    
+    if (inherits(result, "error")) {
+      showModal(modalDialog(
+        title = "Controls Error",
+        paste("Failed to compute controls summary:", result$message),
+        easyClose = TRUE,
+        footer = modalButton("Dismiss")
+      ))
+      return(NULL)
+    }
+    
+    result  # NULL if no controls, data frame if controls exist
   })
-  
   # Conditionally render the controls table download button
   output$download_controls_table_ui <- renderUI({
     downloadButton("download_controls_table", "Download Table",
