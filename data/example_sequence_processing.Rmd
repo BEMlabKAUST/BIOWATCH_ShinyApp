@@ -1,0 +1,232 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+
+Load the packages needed for getting these codes to work
+```{r}
+library(dada2)
+library(ShortRead)
+packageVersion("ShortRead")
+library(Biostrings)
+library(ggplot2)
+library(forcats)
+
+setwd("~/Set/Working/Directory/")
+
+```
+
+#Processing
+Set the working directory for processing. Needs to be repeated for each set of files
+
+```{r}
+
+path <- "~/Set/Working/Directory/"  ## CHANGE ME to the directory containing the fastq files.
+
+list.files(path)
+
+#Get list of forward and reverse reads
+fnFs <- sort(list.files(path, pattern = "R1_001.fastq.gz", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern = "R2_001.fastq.gz", full.names = TRUE))
+
+#Define primers
+FWD <- "GGWACWGGWTGAACWGTWTAYCCYCC"
+REV <- "TANACYTCNGGRTGNCCRAARAAYCA"
+
+
+allOrients <- function(primer) {
+    # Create all orientations of the input sequence
+    require(Biostrings)
+    dna <- DNAString(primer)  # The Biostrings works w/ DNAString objects rather than character vectors
+    orients <- c(Forward = dna, Complement = complement(dna), Reverse = reverse(dna), 
+        RevComp = reverseComplement(dna))
+    return(sapply(orients, toString))  # Convert back to character vector
+}
+FWD.orients <- allOrients(FWD)
+REV.orients <- allOrients(REV)
+FWD.orients
+
+
+primerHits <- function(primer, fn) {
+    # Counts number of reads in which the primer is found
+    nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed = FALSE)
+    return(sum(nhits > 0))
+}
+#Check the number of reads the primers is observed in.
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs[[2]]), 
+    REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs[[2]]))
+
+
+cutadapt <- "path/to/cutadapt" # CHANGE ME to the cutadapt path on your machine
+system2(cutadapt, args = "--version") # Run shell commands from R
+
+path.cut <- file.path(path, "cutadapt")
+if(!dir.exists(path.cut)) dir.create(path.cut)
+fnFs.cut <- file.path(path.cut, basename(fnFs))
+fnRs.cut <- file.path(path.cut, basename(fnRs))
+
+# Trim FWD off of R1 (forward reads) - 
+R1.flags <- paste0("-g", " ^", FWD) 
+# Trim REV off of R2 (reverse reads)
+R2.flags <- paste0("-G", " ^", REV) 
+# Run Cutadapt
+for(i in seq_along(fnFs)) {
+  system2(cutadapt, args = c("-e 0.05 --discard-untrimmed", R1.flags, R2.flags,
+                             "-o", fnFs.cut[i], "-p", fnRs.cut[i], # output files
+                             fnFs[i], fnRs[i])) # input files
+}
+
+#Check the number of reads with primers after trimming - Should be 0
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs.cut[[1]]), 
+    REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs.cut[[1]]))
+
+# Forward and reverse fastq filenames have the format:
+cutFs <- sort(list.files(path.cut, pattern = "R1_001.fastq.gz", full.names = TRUE))
+cutRs <- sort(list.files(path.cut, pattern = "R2_001.fastq.gz", full.names = TRUE))
+
+
+if(length(cutRs) == length(cutRs)) print("Forward and reverse files match. Go forth and explore")
+if (length(cutRs) != length(cutRs)) stop("Forward and reverse files do not match. Better go back and have a check")
+
+
+# Extract sample names, assuming filenames have format:
+get.sample.name <- function(fname) strsplit(basename(fname), "_")[[1]][1]
+sample.names <- unname(sapply(cutFs, get.sample.name))
+head(sample.names)
+
+#Plot quality results - If less than 20 files print all otherwise select 20
+if(length(cutFs) <= 20) {
+  fwd_qual_plots <- plotQualityProfile(cutFs) + 
+  scale_x_continuous(breaks=seq(0,250,10)) + 
+  scale_y_continuous(breaks=seq(0,40,2)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  rev_qual_plots <- plotQualityProfile(cutRs) + 
+  scale_x_continuous(breaks=seq(0,250,10)) + 
+  scale_y_continuous(breaks=seq(0,40,2)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+} else {
+  rand_samples <- sample(size = 20, 1:length(cutFs)) # grab 20 random samples to plot
+  fwd_qual_plots <- plotQualityProfile(cutFs[rand_samples]) + 
+  scale_x_continuous(breaks=seq(0,250,10)) + 
+  scale_y_continuous(breaks=seq(0,40,2)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  rev_qual_plots <- plotQualityProfile(cutRs[rand_samples]) + 
+  scale_x_continuous(breaks=seq(0,250,10)) + 
+  scale_y_continuous(breaks=seq(0,40,2)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+}
+#Save quality files
+jpeg(file="Quality.Plot.COI.jpg",res=300, width=15, height=8, units="in")
+fwd_qual_plots
+dev.off()
+
+jpeg(file="Quality.Plot.COI.R.jpg",res=300, width=15, height=8, units="in")
+rev_qual_plots
+dev.off()
+
+#Create path for filtered files
+filtpathF <- file.path(path.cut, "filtered", basename(cutFs))
+filtpathR <- file.path(path.cut, "filtered", basename(cutRs))
+
+#Filter the files. Change truncLen and maxEE based on the quality of the sequences (see plots) and the size of the amplicon
+out <- filterAndTrim(cutFs, filtpathF, cutRs, filtpathR,
+ truncLen=c(165,165), maxEE=c(3,5), truncQ=2, maxN=0, rm.phix=TRUE,
+ compress=TRUE, verbose=TRUE, multithread=TRUE)
+
+out <- as.data.frame(out)
+
+out$perc <- out$reads.out/out$reads.in*100
+
+
+#Get basenames of files
+sample.names <- sapply(strsplit(basename(filtpathF), "_"), `[`, 1) # Assumes filename = samplename_XXX.fastq.gz
+sample.namesR <- sapply(strsplit(basename(filtpathR), "_"), `[`, 1) # Assumes filename = samplename_XXX.fastq.gz
+if(identical(sample.names, sample.namesR)) {print("Files are still matching.....congratulations")
+  } else {stop("Forward and reverse files do not match.")}
+names(filtpathF) <- sample.names
+names(filtpathR) <- sample.namesR
+
+set.seed(100) # set seed to ensure that randomized steps are replicatable
+
+# Learn forward error rates
+errF <- learnErrors(filtpathF, nbases=1e8, multithread=TRUE, verbose = TRUE)
+
+# Learn reverse error rates
+errR <- learnErrors(filtpathR, nbases=1e8, multithread=TRUE, verbose = TRUE)
+
+#View error plots
+errF_plot <- plotErrors(errF, nominalQ=TRUE)
+errF_plot
+errR_plot <- plotErrors(errR, nominalQ=TRUE)
+errR_plot
+
+#Dereplicate the files to make further processing less computationally heavy
+derepF <- derepFastq(filtpathF, verbose=TRUE)
+derepR <- derepFastq(filtpathR, verbose=TRUE)
+
+#Infer ASVs using the pseudo pooling approach of dada2.
+dadaF.pseudo <- dada(derepF, err=errF, multithread=TRUE, pool="pseudo")
+dadaR.pseudo <- dada(derepR, err=errR, multithread=TRUE, pool="pseudo")
+
+#Merge forward and reverse sequences together with a mismatch of 1 and minimum overlap of 10
+mergers <- mergePairs(dadaF.pseudo, derepF, dadaR.pseudo, derepR, maxMismatch = 1, minOverlap = 10, verbose=TRUE)
+#make sequence table
+seqtab <- makeSequenceTable(mergers)
+
+#Save
+saveRDS(seqtab, paste0(path, "example_processing.COI.rds"))
+
+
+#Track the number of sequences retained at each step
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaF.pseudo, getN), sapply(dadaR.pseudo, getN), sapply(mergers, getN))
+colnames(track) <- c("input", "filtered", "perc.filtered", "denoisedF", "denoisedR", "merged")
+rownames(track) <- sample.names
+track <- as.data.frame(track)
+track$perc.denoisedF <- track$denoisedF/track$input*100
+track$perc.denoisedR <- track$denoisedR/track$input*100
+track$perc.merged <- track$merged/track$input*100
+write.csv(track, paste0(path, "example_processing_COI.track.csv"))
+
+#Investigate the sequence distribution of the sequences. For COI it should be 313
+table(nchar(getSequences(seqtab)))
+
+hist(nchar(getSequences(seqtab)), main="Distribution of sequence lengths")
+
+#trim sequences that deviate from the expected length
+seqtab.2 <- seqtab[,nchar(colnames(seqtab)) %in% seq(312,314)]
+
+#Undertake chimera checking of the data and save file.
+seqtab.nochim <- removeBimeraDenovo(seqtab.2, multithread=TRUE, verbose=TRUE)
+
+saveRDS(seqtab.nochim, "example_processing_COI.nochim.rds")
+```
+
+
+```{r}
+library(phyloseq)
+library(dplyr)
+library(data.table)
+
+#Change the sequence names of the dada2 file to ASV....
+asv_seqs <- colnames(seqtab.nochim)
+asv_headers <- vector(dim(seqtab.nochim)[2], mode="character")
+
+for (i in 1:dim(seqtab.nochim)[2]) {
+  asv_headers[i] <- paste(">ASV", i, sep="_")
+}
+
+  # making and writing out a fasta of our final ASV seqs:
+asv_fasta <- c(rbind(asv_headers, asv_seqs))
+write(asv_fasta, "example_processing_COI.nochim_ASVs.fa")
+
+  # count table:
+asv_tab <- t(seqtab.nochim)
+row.names(asv_tab) <- sub(">", "", asv_headers)
+write.table(asv_tab, "example_processing_COI_ASVs_counts.tsv", sep="\t", quote=F, col.names=NA)
+
+
+```
