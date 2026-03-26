@@ -1464,9 +1464,21 @@ server <- function(input, output, session) {
     out_long_metadata
   })
   
+  #processing modal for control
+  show_control_processing_modal <- function() {
+    showModal(modalDialog(
+      title = "Processing",
+      "Processing control results...",
+      footer = NULL,
+      easyClose = FALSE
+    ))
+  }
+  
   #Make the controls detection sumamry
   controls_summary_reactive <- reactive({
     req(asv_table_filtered())
+    
+    show_control_processing_modal()
     
     result <- tryCatch({
       compute_controls_summary(asv_table_filtered())
@@ -1474,6 +1486,8 @@ server <- function(input, output, session) {
       log_error(paste("Controls summary failed:", e$message))
       e
     })
+    
+    removeModal()
     
     if (inherits(result, "error")) {
       showModal(modalDialog(
@@ -1544,13 +1558,46 @@ server <- function(input, output, session) {
   replicate_summary <- reactive({
     req(asv_table_filtered())
     
+    # Show processing modal
+    showModal(modalDialog(
+      title = "Processing",
+      "Processing replicate results...",
+      footer = NULL,
+      easyClose = FALSE
+    ))
+    
     group_var <- if (input$soi_grouping %in% c("Site", "Region")) {
       input$soi_grouping
     } else {
       "Site"
     }
     
-    compute_replicate_summary(asv_table_filtered(), input$abundance_threshold, group_var)
+    result <- tryCatch({
+      compute_replicate_summary(
+        asv_table_filtered(),
+        input$abundance_threshold,
+        group_var
+      )
+    }, error = function(e) {
+      log_error(paste("Replicate summary failed:", e$message))
+      e
+    })
+    
+    # Always remove modal
+    removeModal()
+    
+    # Handle errors
+    if (inherits(result, "error")) {
+      showModal(modalDialog(
+        title = "Replicate Error",
+        paste("Failed to compute replicate summary:", result$message),
+        easyClose = TRUE,
+        footer = modalButton("Dismiss")
+      ))
+      return(NULL)
+    }
+    
+    result
   })
   
   #Download of the replicate table
