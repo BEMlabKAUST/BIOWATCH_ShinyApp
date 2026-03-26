@@ -1,0 +1,18 @@
+
+services:
+  biowatch:
+    image: jkpearmanbioinf/biowatch:latest
+    container_name: biowatch-app
+    shm_size: '2gb'
+    ports:
+      - "3838:3838"
+    volumes:
+      - ./data:/app/data
+      - ./databases:/app/databases
+      - ./functions:/app/functions
+      - ./gbif_cache:/app/gbif_cache
+    environment:
+      - SHINY_LOG_LEVEL=TRACE
+      - DOCKER=TRUE
+    restart: unless-stopped
+
