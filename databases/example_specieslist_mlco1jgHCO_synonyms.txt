@@ -1,0 +1,180 @@
+SOI	canonicalName
+Amphibalanus amphitrite	Amphibalanus amphitrite
+Amphibalanus amphitrite	Balanus amphitrite
+Amphibalanus amphitrite	Balanus amphitrite aeratus
+Amphibalanus amphitrite	Balanus amphitrite columnarius
+Amphibalanus amphitrite	Balanus amphitrite communis
+Amphibalanus amphitrite	Balanus amphitrite denticulate
+Amphibalanus amphitrite	Balanus amphitrite fluminensis
+Amphibalanus amphitrite	Balanus amphitrite hawaiiensis
+Amphibalanus amphitrite	Balanus amphitrite herzi
+Amphibalanus reticulatus	Amphibalanus reticulatus
+Amphibalanus reticulatus	Balanus reticulatus
+Hydroides elegans	Hydroides elegans
+Hydroides elegans	Eupomatus elegans
+Hydroides elegans	Hydroides abbreviata
+Hydroides elegans	Hydroides incrustans
+Hydroides elegans	Hydroides pacificus
+Hydroides elegans	Hydroides pectinata dioperculata
+Hydroides elegans	Hydroides spinalateralis
+Hydroides elegans	Protohydroides elegans
+Hydroides elegans	Protohydroides incrustans
+Hydroides elegans	Serpula elegans
+Hydroides elegans	Serpula vermicalluris
+Hydroides elegans	Serpula vermucularis
+Hydroides elegans	Vermilia abbreviata
+Watersipora subtorquata	Watersipora subtorquata
+Watersipora subtorquata	Cellepora subtorquata
+Watersipora subtorquata	Escharina torquata
+Watersipora subtorquata	Watersipora edmondsoni
+Botryllus schlosseri	Botryllus schlosseri
+Botryllus schlosseri	Alcyonium borlasii
+Botryllus schlosseri	Alcyonium schlosseri
+Botryllus schlosseri	Aplidium verrucosum
+Botryllus schlosseri	Botryllus aurolineatus
+Botryllus schlosseri	Botryllus badius
+Botryllus schlosseri	Botryllus bivittatus
+Botryllus schlosseri	Botryllus calendula
+Botryllus schlosseri	Botryllus calyculatus
+Botryllus schlosseri	Botryllus castaneus
+Botryllus schlosseri	Botryllus gascoi
+Botryllus schlosseri	Botryllus gemmeus
+Botryllus schlosseri	Botryllus gouldii
+Botryllus schlosseri	Botryllus marionis
+Botryllus schlosseri	Botryllus miniatus
+Botryllus schlosseri	Botryllus minutus
+Botryllus schlosseri	Botryllus morio
+Botryllus schlosseri	Botryllus polycyclus
+Botryllus schlosseri	Botryllus pruinosus
+Botryllus schlosseri	Botryllus rubens
+Botryllus schlosseri	Botryllus rubigo
+Botryllus schlosseri	Botryllus smaragdus
+Botryllus schlosseri	Botryllus stellatus
+Botryllus schlosseri	Botryllus violaceus
+Botryllus schlosseri	Botryllus violatinctus
+Botryllus schlosseri	Botryllus virescens
+Pennaria disticha	Pennaria disticha
+Pennaria disticha	Amalthaea amoebigera
+Pennaria disticha	Corydendrium splendidum
+Pennaria disticha	Eucoryne elegans
+Pennaria disticha	Euphysa globator
+Pennaria disticha	Globiceps tiarella
+Pennaria disticha	Halocordyle cooperi
+Pennaria disticha	Halocordyle disticha
+Pennaria disticha	Halocordyle disticha australis
+Pennaria disticha	Halocordyle fragilis
+Pennaria disticha	Pennaria adamsia
+Pennaria disticha	Pennaria australis
+Pennaria disticha	Pennaria caulini
+Pennaria disticha	Pennaria gibbosa
+Pennaria disticha	Pennaria inornata
+Pennaria disticha	Pennaria pacifica
+Pennaria disticha	Pennaria rosea
+Pennaria disticha	Pennaria symmetrica
+Pennaria disticha	Pennaria tiarella
+Arcuatula senhousia	Arcuatula senhousia
+Arcuatula senhousia	Arctuala senhousia
+Arcuatula senhousia	Brachidontes senhousia
+Arcuatula senhousia	Brachiodontes senhausi
+Arcuatula senhousia	Modiola aquarius
+Arcuatula senhousia	Modiola bellardiana
+Arcuatula senhousia	Modiola senhousia
+Arcuatula senhousia	Musculista senhousia
+Arcuatula senhousia	Musculus senhousia
+Lyrodus pedicellatus	Lyrodus pedicellatus
+Lyrodus pedicellatus	Lyrodus tristis
+Lyrodus pedicellatus	Teredo arabica
+Lyrodus pedicellatus	Teredo calmani
+Lyrodus pedicellatus	Teredo chlorotica
+Lyrodus pedicellatus	Teredo dagmarae
+Lyrodus pedicellatus	Teredo diegensis
+Lyrodus pedicellatus	Teredo diegensis midwayensis
+Lyrodus pedicellatus	Teredo franziusi
+Lyrodus pedicellatus	Teredo hawaiensis
+Lyrodus pedicellatus	Teredo helleniusi
+Lyrodus pedicellatus	Teredo hibicola
+Lyrodus pedicellatus	Teredo honoluluensis
+Lyrodus pedicellatus	Teredo indica
+Lyrodus pedicellatus	Teredo kauiensis
+Lyrodus pedicellatus	Teredo lamyi
+Lyrodus pedicellatus	Teredo linaoana
+Lyrodus pedicellatus	Teredo lomensis
+Lyrodus pedicellatus	Teredo madrasensis
+Lyrodus pedicellatus	Teredo malaccana
+Lyrodus pedicellatus	Teredo midwayensis
+Lyrodus pedicellatus	Teredo nodosa
+Lyrodus pedicellatus	Teredo pedicellata
+Lyrodus pedicellatus	Teredo pedicellata truncata
+Lyrodus pedicellatus	Teredo pertingens
+Lyrodus pedicellatus	Teredo pochhammeri
+Lyrodus pedicellatus	Teredo robsoni
+Lyrodus pedicellatus	Teredo samoaensis
+Lyrodus pedicellatus	Teredo siamensis
+Lyrodus pedicellatus	Teredo taiwanensis
+Lyrodus pedicellatus	Teredo tateyamensis
+Lyrodus pedicellatus	Teredo togoensis
+Lyrodus pedicellatus	Teredo townsendi
+Lyrodus pedicellatus	Teredo tristi
+Lyrodus pedicellatus	Teredo tristis
+Lyrodus pedicellatus	Teredo yatsui
+Ulva rigida	Ulva rigida
+Ulva rigida	Letterstedtia petiolata
+Ulva rigida	Phycoseris gigantea perforata
+Ulva rigida	Phycoseris rigida
+Ulva rigida	Phycoseris ulva
+Ulva rigida	Ulva armoricana
+Ulva rigida	Ulva petiolata
+Ulva rigida	Ulva spathulata
+Ulva rigida	Ulva thuretii
+Caulerpa prolifera	Caulerpa prolifera
+Caulerpa prolifera	Caulerpa ollivieri
+Caulerpa prolifera	Fucus prolifera
+Bougainvillia muscus	Bougainvillia muscus
+Bougainvillia muscus	Bougainvillia alderi
+Bougainvillia muscus	Bougainvillia autumnalis
+Bougainvillia muscus	Bougainvillia autumnalis magna
+Bougainvillia muscus	Bougainvillia benedenii
+Bougainvillia muscus	Bougainvillia diplectanos
+Bougainvillia muscus	Bougainvillia fructicosa
+Bougainvillia muscus	Bougainvillia fruticosa
+Bougainvillia muscus	Bougainvillia gibbsi
+Bougainvillia muscus	Bougainvillia maniculata
+Bougainvillia muscus	Bougainvillia nana
+Bougainvillia muscus	Bougainvillia octocilia
+Bougainvillia muscus	Bougainvillia ramosa
+Bougainvillia muscus	Bougainvillia ramosa benedenii
+Bougainvillia muscus	Bougainvillia ramosa vanbenedeni
+Bougainvillia muscus	Bougainvillia ramosa muscus
+Bougainvillia muscus	Bougainvillia ramosa nana
+Bougainvillia muscus	Bougainvillia ramosa minima
+Bougainvillia muscus	Bougainvillia spec
+Bougainvillia muscus	Eudendrium ramosum
+Bougainvillia muscus	Lizusa octocilia
+Bougainvillia muscus	Margelis maniculata
+Bougainvillia muscus	Medusa ocilia
+Bougainvillia muscus	Medusa octocilia
+Bougainvillia muscus	Perigonimus muscus
+Bougainvillia muscus	Perigonymus muscus
+Bougainvillia muscus	Perigonymus spec
+Bougainvillia muscus	Podocoryna alderi
+Syllis benguellana	Syllis benguellana
+Syllis benguellana	Typosyllis benguellana
+Clava multicornis	Clava multicornis
+Clava multicornis	Clava cornea
+Clava multicornis	Clava diffusa
+Clava multicornis	Clava leptostyla
+Clava multicornis	Clava nodosa
+Clava multicornis	Clava parasitica
+Clava multicornis	Clava squamata
+Clava multicornis	Coryne squamata
+Clava multicornis	Hydra multicornis
+Clava multicornis	Hydra squamata
+Eriocheir sinensis	Eriocheir sinensis
+Eriocheir sinensis	Eriocheir sinensis acutifrons
+Eriocheir sinensis	Eriocheir sinensis rostrata
+Eriocheir sinensis	Eriocheir sinensis rotundifrons
+Eriocheir sinensis	Eriocheir sinensis trilobata
+Eriocheir sinensis	Eriochirus sinensis
+Eriocheir sinensis	Grapsus nankin
+Mnemiopsis leidyi	Mnemiopsis leidyi
+Mnemiopsis leidyi	Mnemiopsis mccradyi
