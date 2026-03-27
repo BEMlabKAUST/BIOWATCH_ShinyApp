@@ -6,6 +6,7 @@ if (Sys.info()[["sysname"]] == "Darwin") {
   options(browser = Sys.which("xdg-open"))
 }
 
+
 library(shiny)
 library(shinyWidgets)
 library(shinyjs)
@@ -64,12 +65,13 @@ if (docker_mode) {
     padding: 0;
     background: radial-gradient(circle at top, #4EC9E3, #0C0A26) !important;
     background-attachment: fixed;
-    overflow-x: hidden;
+    overflow-x: auto;
   }
   .content-wrapper {
     min-height: 100vh;
     width: 100%;
     padding-bottom: 50px;
+    overflow-x: auto;
   }
   .main-header, .main-sidebar, .main-footer {
     background: transparent !important;
@@ -406,7 +408,7 @@ tags$style(HTML("
                           textOutput("slider_length_value", inline = TRUE)
                         ),
                         
-                        sliderInput("length_filter", "", min = 90, max = 100, value = c(90, 100)),
+                        sliderInput("length_filter", "", min = 90, max = 100, value = c(99, 100)),
                         
                         tags$script(HTML("
     $(document).on('input', 'input[type=range]', function() {
