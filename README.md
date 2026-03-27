@@ -83,7 +83,7 @@ The input for the BLAST analysis is a fasta file of ASVs. The processing of sequ
 
 The blast input tab allows the user to input a fasta file containing sequences for investigation (Figure 5). The user can then select the appropriate database for comparison against (made via the database construction steps above). The user also has the option to include a ASV table and a coordinates file to allow more in depth analysis of the dataset. 
 
-<img width="2938" height="1232" alt="Figure5" src="https://github.com/user-attachments/assets/1f85814b-1430-4887-ac82-1ebbe0909040" />
+<img width="2984" height="1602" alt="Figure5" src="https://github.com/user-attachments/assets/d568803b-44af-4080-b219-354174cf1157" />
 <em>Figure 5: Example of the file inputs for the BlAST input tab.</em><br></br>
 
 The user can define the maximum target sequences for the blast query.
