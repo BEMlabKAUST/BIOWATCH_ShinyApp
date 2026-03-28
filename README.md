@@ -25,7 +25,25 @@ can be used to launch the BIOWATCH app in the browser.
 
 The installation via conda has been tested on Mac and Linux operating systems. 
 
-  <h2>3. Workflow and examples</h2>
+<h3>via Docker</h3>
+
+Docker is a container application that allows the deployment of software applications that are isolated from your computer and run through a Docker Engine. The isolation of the container from your computer means that Docker containers can be run on most operating systems including Mac, Windows and Linux.
+
+Here is a introduction to the use of [Docker](https://docs.docker.com/get-started/) and a free account is required to use teh Docker software. To run BIOWATCH with Docker the user will need to install and run Docker Desktop. Here are instructions for installation using [Mac](https://docs.docker.com/desktop/setup/install/mac-install/), [Windows](https://docs.docker.com/desktop/setup/install/windows-install/) and [Linux](https://docs.docker.com/desktop/setup/install/linux/). Once Docker Desktop is running then the user can obtain the Docker image for BIOWATCH by running the command:
+
+    docker pull jkpearmanbioinf/biowatch:latest
+
+The easiest way to run the docker image is to navigate into the downloaded git folder which contains a file called docker-compose.yml. If the user runs the below command in the terminal then BIOWATCH will start up.
+
+    docker compose up
+
+The user can then view BIOWATCH in a web browser by typing:
+
+    http://localhost:3838
+
+For further information on commands for the use of docker please view the Docker [documents](https://docs.docker.com/get-started/).
+
+<h2>3. Workflow and examples</h2>
 
 Example files are available for download in the relevant tabs (or are found in the data folder) for demonstration purposes. 
   
