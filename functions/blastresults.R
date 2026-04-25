@@ -1,4 +1,4 @@
-filter_blast_results <- function(blast_results, pident_range, length_range, species_path) {
+filter_blast_results <- function(blast_results, pident_range, length_range, species_path, bitscore_threshold_pct) {
   
   filtered <- blast_results
   
@@ -11,6 +11,17 @@ filter_blast_results <- function(blast_results, pident_range, length_range, spec
   filtered <- filtered[!is.na(filtered$qcovhsp) &
                          filtered$qcovhsp >= length_range[1] &
                          filtered$qcovhsp <= length_range[2], ]
+  
+  
+  # Filter by bitscore threshold
+  top_bitscore_per_asv <- filtered %>%
+    group_by(qseqid) %>%
+    summarise(max_bitscore = max(bitscore, na.rm = TRUE), .groups = "drop")
+  
+  filtered <- filtered %>%
+    inner_join(top_bitscore_per_asv, by = "qseqid") %>%
+    filter(bitscore >= max_bitscore * (1 - bitscore_threshold_pct / 100)) %>%
+    select(-max_bitscore)
   
   # Load and join SOI list
   SOI_list.df <- fread(species_path, header = TRUE, sep = "\t") %>%
@@ -25,29 +36,29 @@ filter_blast_results <- function(blast_results, pident_range, length_range, spec
 }
 
 
-get_top_bitscore_results <- function(filtered) {
+get_top_pident_results <- function(filtered) {
   
-  #find max bitscore per ASV
-  top_bitscore_per_asv <- filtered %>%
+  # Find max pident per ASV
+  top_pident_per_asv <- filtered %>%
     group_by(qseqid) %>%
-    summarise(bitscore = max(bitscore, na.rm = TRUE))
+    summarise(pident = max(pident, na.rm = TRUE))
   
   #Retain results where the result matches the top bitscore for each ASV
   merged_df <- filtered %>%
-    inner_join(top_bitscore_per_asv, by = c("qseqid", "bitscore")) %>%
+    inner_join(top_pident_per_asv, by = c("qseqid", "pident")) %>%
     select(qseqid, sscinames, SOI_flag, pident) %>%
     distinct()
   
-  #Count how many hits have the max bitscore for each ASV
-  asv_top_bitscore_counts <- merged_df %>%
+  # Count how many species share the top pident per ASV
+  asv_top_pident_counts <- merged_df %>%
     group_by(qseqid) %>%
-    summarise(Top_bitscore_Count = n())
+    summarise(Top_pident_Count = n())
   
-  #Add flag if there are multiple hits for the max bitscore.
+  # Flag if multiple species share the top pident
   merged_df %>%
-    inner_join(asv_top_bitscore_counts, by = "qseqid") %>%
-    mutate(Multiple_Instances = Top_bitscore_Count > 1) %>%
-    select(-Top_bitscore_Count)
+    inner_join(asv_top_pident_counts, by = "qseqid") %>%
+    mutate(Multiple_Instances = Top_pident_Count > 1) %>%
+    select(-Top_pident_Count)
 }
 
 

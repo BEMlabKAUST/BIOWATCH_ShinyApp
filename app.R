@@ -410,6 +410,15 @@ tags$style(HTML("
                         
                         sliderInput("length_filter", "", min = 90, max = 100, value = c(99, 100)),
                         
+                        tags$div(
+                          style = "font-size: 18px; color: white;",
+                          "Bit score threshold (%): ", 
+                          textOutput("slider_bitscore_value", inline = TRUE)
+                        ),
+                        
+                        sliderInput("bitscore_threshold", "", min = 0, max = 10, value = c(0)),
+                        
+                        
                         tags$script(HTML("
     $(document).on('input', 'input[type=range]', function() {
       let val = $(this).val();
@@ -418,9 +427,9 @@ tags$style(HTML("
   ")),
                       
                         img(src = "KAUST_logo_transparent.png", height = "135px", 
-                            style = "position: absolute; top: 130%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                            style = "position: absolute; top: 110%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
                         img(src = "BEM_logo2.png", height = "120px", 
-                            style = "position: absolute; top: 180%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
+                            style = "position: absolute; top: 140%; left: 50%; transform: translate(-50%, -50%); border-radius: 10px;"),
                       )
                ),
                column(9,
@@ -1058,7 +1067,50 @@ server <- function(input, output, session) {
     gbif_pwd  = NULL
   )
   
+  creds_file <- file.path(Sys.getenv("HOME"), ".blast_app_creds.rds")
+  
+  save_credentials <- function(email, gbif_user, gbif_pwd) {
+    saveRDS(list(email = email, gbif_user = gbif_user, gbif_pwd = gbif_pwd), creds_file)
+  }
+  
+  load_credentials <- function() {
+    if (file.exists(creds_file)) readRDS(creds_file) else NULL
+  }
+  
+  clear_credentials <- function() {
+    if (file.exists(creds_file)) file.remove(creds_file)
+  }
+  
+  
   session$onFlushed(function() {
+    saved <- load_credentials()
+    
+    if (!is.null(saved)) {
+      showModal(modalDialog(
+        tags$script(HTML("
+      $(document).ready(function() {
+        $('.modal-content').css({
+          'background-color': '#1e3a5c',
+          'background-image': 'none'
+        });
+        $('.modal-title').css('color', '#ffffff');
+        $('.modal-header').css('border-bottom-color', '#1e3a5c');
+        $('.modal-body').css('padding', '5px 15px');
+      });
+    ")),
+        title     = "Welcome Back",
+        footer    = tagList(
+          actionButton("use_saved_creds",   paste0("Continue as ", saved$email), class = "btn-primary"),
+          actionButton("clear_saved_creds", "Clear saved credentials and re-login", class = "btn-primary")
+        ),
+        easyClose = FALSE
+      ))
+    } else {
+      show_login_modal()
+    }
+  }, once = TRUE)
+  
+  show_login_modal <- function() {
     showModal(modalDialog(
       tags$script(HTML("
       $(document).ready(function() {
@@ -1072,25 +1124,52 @@ server <- function(input, output, session) {
     ")),
       tags$div(
         id = "creds-modal-body",
-        textInput("user_email", "Email (NCBI & GBIF):", placeholder = "you@example.com"),
-        textInput("gbif_username", "GBIF Username:"),
-        passwordInput("gbif_password", "GBIF Password:")
+        textInput("user_email",        "Email (NCBI & GBIF):", placeholder = "you@example.com"),
+        textInput("gbif_username",     "GBIF Username:"),
+        passwordInput("gbif_password", "GBIF Password:"),
+        checkboxInput("save_creds", tags$span(style = "color: white;",   "Remember my credentials"), value = FALSE),
+        tags$small(style = "color: white;", 
+                   "Credentials are stored locally on your machine only.")
       ),
-      title = "Welcome — Please Enter Your Credentials",
-      footer = actionButton("submit_creds", "Continue", class = "btn-primary"),
+      title     = "Welcome — Please Enter Your Credentials",
+      footer    = actionButton("submit_creds", "Continue", class = "btn-primary"),
       easyClose = FALSE
     ))
-  }, once = TRUE)
+  }
   
+  # Use saved credentials
+  observeEvent(input$use_saved_creds, {
+    saved <- load_credentials()
+    user_creds$email     <- saved$email
+    user_creds$gbif_user <- saved$gbif_user
+    user_creds$gbif_pwd  <- saved$gbif_pwd
+    removeModal()
+    run_taxonomy_check()
+  })
+  
+  # Clear saved and show fresh login
+  observeEvent(input$clear_saved_creds, {
+    clear_credentials()
+    removeModal()
+    show_login_modal()
+  })
+  
+  # Fresh login submission
   observeEvent(input$submit_creds, {
     req(input$user_email, input$gbif_username, input$gbif_password)
-    #set credentials
     user_creds$email     <- input$user_email
     user_creds$gbif_user <- input$gbif_username
     user_creds$gbif_pwd  <- input$gbif_password
     
+    if (isTRUE(input$save_creds)) {
+      save_credentials(input$user_email, input$gbif_username, input$gbif_password)
+    }
     removeModal()
-    #Check if taxonomy files are present and if not download them
+    run_taxonomy_check()
+  })
+  
+  # Extracted so both paths share the same taxonomy check logic
+  run_taxonomy_check <- function() {
     data_dir <- "data"
     res      <- check_taxonomy_files(data_dir)
     
@@ -1123,7 +1202,7 @@ server <- function(input, output, session) {
         )
       ))
     }
-  })
+  }
   
   
   
@@ -1284,6 +1363,10 @@ server <- function(input, output, session) {
     input$pident_filter
   }) %>% debounce(1000)
   
+  debounced_bitscore_threshold <- reactive({
+    input$bitscore_threshold
+  }) %>% debounce(1000)
+  
 ####RUN BLAST####
 
   observeEvent(input$run_blast, {
@@ -1344,14 +1427,15 @@ server <- function(input, output, session) {
       blast_results = blast_results(),
       pident_range  = debounced_pident_filter(),
       length_range  = debounced_length_filter(),
-      species_path  = species_list_path()
+      species_path  = species_list_path(),
+      bitscore_threshold_pct = debounced_bitscore_threshold()
     )
   })
   
   #Further filtering based on top bitscores and flag if multiple instances.
   filtered_results2 <- reactive({
     req(filtered_results())
-    get_top_bitscore_results(filtered_results())
+    get_top_pident_results(filtered_results())
   })
   
   #Make species boxes for those species that are likely
