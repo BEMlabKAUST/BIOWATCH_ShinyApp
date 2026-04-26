@@ -10,6 +10,10 @@ BIOWATCH is a R shiny app which aims to improve the detection of species of inte
   For GBIF downloads to work registration (free) is required. Please visit their [website](https://www.gbif.org) to register.
   
   Once conda is install please download the BIOWATCH_ShinyApp repository and navigate into the folder. Once there enter the commands in the order they appear below. Please enter in user details for the NCBI email and GBIF requirements.
+       
+       git clone https://github.com/BEMlabKAUST/BIOWATCH_ShinyApp/
+       
+       cd BIOWATCH_ShinyApp
 
        conda env create -f conda/environment.yml
 
