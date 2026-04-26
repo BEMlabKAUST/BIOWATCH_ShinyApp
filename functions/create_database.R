@@ -68,7 +68,7 @@ system(paste(crabs_path, "--filter",
              "--input intermediate/merged_combined_output.tax.cleaned.tsv", 
              "--output intermediate/merged_combined_output.tax.cleaned.final.tsv", 
              "--minimum-length 50",
-             "--maximum-n 5",
+             "--maximum-n 0",
              "--environmental",
              "--no-species-id",
              "--rank-na 2"))
