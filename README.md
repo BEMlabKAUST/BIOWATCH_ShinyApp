@@ -116,15 +116,15 @@ Prior to the results being shown a pop-up disclaimer appears for the user to acc
 
 The Species detection tab outputs species cards that show the ASVs that were detected for each species of interest and the similarity of those ASVs to the species of interest. Species of interest are classified as either Likely or Putative (Figure 6).
 
-<img width="2996" height="1396" alt="Figure6" src="https://github.com/user-attachments/assets/aae3235c-8973-4419-9fc0-3605cbdec36f" />
+<img width="2988" height="1598" alt="Figure3" src="https://github.com/user-attachments/assets/ee1b8c88-d7f2-466a-b9e3-3868316f9a4c" />
 <em>Figure 6: Example for the species detection showing the species cards with the ASVs assigned to the species and the similarity</em>
 
 
-Likely detections are when only a single species has the top bitscore for a sequence.
+Likely detections are when only a single species within the bit score threshold has the highest percentage similarity for a sequence.
 
-Putative detections are when the top bitscore for a sequence is shared amongst multiple detections and further investigation is required.
+Putative detections are when the highest percentage similarity for a sequence is shared amongst multiple detections and further investigation is required.
 
-The user has the ability to alter the default thresholds for both percentage identity and sequence coverage and the species cards will update dependent on changes to these settings. 
+The user has the ability to alter the default thresholds for both percentage identity and sequence coverage as well as the bit score threshold and the species cards will update dependent on changes to these settings. 
 
 The full blast results and the filtered blast results (based on the percentage identity and coverage thresholds) can be downloaded for further investigation of the hits.
 
