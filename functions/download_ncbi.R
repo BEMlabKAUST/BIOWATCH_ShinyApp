@@ -11,12 +11,16 @@ download_ncbi <- function(crabs_path, taxa_vector, final_query_str, ncbi_email) 
     # For each taxon, apply it to each OR-separated part of the gene query
     taxa_with_genes <- lapply(taxa_chunk, function(taxon) {
       gene_parts <- strsplit(final_query_str, "\\s+OR\\s+", perl = TRUE)[[1]]
+      gene_parts <- gsub("\\[gene\\]", "", gene_parts)
+      gene_parts <- trimws(gene_parts)
       
-      gene_with_taxon <- lapply(gene_parts, function(gene_part) {
-        paste0(taxon, "[ORGN] AND (", trimws(gene_part), ")")
+      gene_clauses <- lapply(gene_parts, function(gene_part) {
+        paste0(
+          '("', taxon, '"[ORGN] AND "', gene_part, '"[gene])'
+        )
       })
       
-      paste(gene_with_taxon, collapse = " OR ")
+      paste(gene_clauses, collapse = " OR ")
     })
     
     final_chunk_query <- paste0("(", paste(taxa_with_genes, collapse = " OR "), 
