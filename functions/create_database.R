@@ -63,12 +63,13 @@ system(paste(crabs_path, "--pairwise-global-alignment --input intermediate/merge
 #Further dereplication after insilico PCR
 system(paste(crabs_path, "--dereplicate --input intermediate/insilico_aligned.txt --output intermediate/merged_combined_output.tax.cleaned.tsv --dereplication-method \'unique_species\'"))
 
+system("awk -F'\t' '{gsub(/^N+|N+$/, \"\", $NF); print}' OFS='\t' intermediate/merged_combined_output.tax.cleaned.tsv > intermediate/merged_combined_output.tax.cleaned.trimmed.tsv && mv intermediate/merged_combined_output.tax.cleaned.trimmed.tsv intermediate/merged_combined_output.tax.cleaned.tsv")
 #Filtering of results - possibly requires minimum length to be changed. 
 system(paste(crabs_path, "--filter", 
              "--input intermediate/merged_combined_output.tax.cleaned.tsv", 
              "--output intermediate/merged_combined_output.tax.cleaned.final.tsv", 
              "--minimum-length 50",
-             "--maximum-n 0",
+             "--maximum-n 1",
              "--environmental",
              "--no-species-id",
              "--rank-na 2"))
